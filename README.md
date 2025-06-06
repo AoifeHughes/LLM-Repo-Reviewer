@@ -6,6 +6,7 @@ An AI-powered code exploration tool that indexes your codebase and provides inte
 
 - 🚀 **ChromaDB Vector Storage**: Fast and scalable semantic search
 - 🔧 **Tool Calling**: AI can use `find` and `grep` commands for precise searches  
+- 📊 **Auto-Analysis**: Comprehensive automated codebase analysis with reports
 - 💾 **Smart Caching**: Only reprocess changed files
 - 📚 **Multiple File Types**: Python, Markdown, PDF, YAML, JSON, and more
 - 🤖 **OpenAI-Compatible**: Works with local LLMs (Ollama, llama.cpp, etc.)
@@ -20,11 +21,14 @@ pip install -e .
 ## Quick Start
 
 ```bash
-# Run the tool
-llmlibrarian
-
-# Or specify a directory directly
+# Interactive mode
 llmlibrarian ~/my-project
+
+# Auto-analysis mode (generates a comprehensive report)
+llmlibrarian --auto-analyze ~/my-project
+
+# Auto-analysis with custom output file
+llmlibrarian --auto-analyze --output my_report.md ~/my-project
 ```
 
 ## Configuration
@@ -54,6 +58,8 @@ Options:
   --chunk-size SIZE       Text chunk size (default: 1000)
   --chunk-overlap SIZE    Chunk overlap (default: 200)
   --collection NAME       ChromaDB collection prefix
+  --auto-analyze          Automatically analyze codebase and generate report
+  --output FILE           Output file for analysis report (default: analysis_report.md)
   -v, --verbose           Enable verbose output
   --no-interactive        Exit after indexing
 ```
@@ -70,6 +76,7 @@ Once in interactive mode:
 
 ## Example Usage
 
+### Interactive Mode
 ```bash
 # Index and explore a Python project
 llmlibrarian ~/projects/my-python-app
@@ -79,6 +86,24 @@ llmlibrarian ~/projects/my-python-app
 🔍 Query: Find all test files
 🔍 Query: Show me the database models
 🔍 Query: Search for all TODO comments
+```
+
+### Auto-Analysis Mode
+```bash
+# Generate comprehensive analysis report
+llmlibrarian --auto-analyze ~/projects/my-python-app
+
+# This will automatically:
+# 1. Index the entire codebase
+# 2. Ask 18+ analysis questions across 6 categories:
+#    - Project Overview
+#    - Architecture & Design  
+#    - Code Quality
+#    - Documentation
+#    - Security & Best Practices
+#    - Development Workflow
+# 3. Generate executive summary with recommendations
+# 4. Output structured markdown report
 ```
 
 ## Tools Available to AI

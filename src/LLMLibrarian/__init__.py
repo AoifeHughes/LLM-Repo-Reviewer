@@ -1,7 +1,7 @@
+# -*- coding: utf-8 -*-
 """
 Copyright (c) 2024 Aoife Hughes
 """
-
 
 from __future__ import annotations
 
