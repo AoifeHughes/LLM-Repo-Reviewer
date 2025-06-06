@@ -4,7 +4,7 @@ An AI-powered code exploration tool that indexes your codebase and provides inte
 
 ## Features
 
-- 🚀 **Enhanced Version (v2)** with ChromaDB vector storage
+- 🚀 **ChromaDB Vector Storage**: Fast and scalable semantic search
 - 🔧 **Tool Calling**: AI can use `find` and `grep` commands for precise searches  
 - 💾 **Smart Caching**: Only reprocess changed files
 - 📚 **Multiple File Types**: Python, Markdown, PDF, YAML, JSON, and more
@@ -19,22 +19,12 @@ pip install -e .
 
 ## Quick Start
 
-### Using the Enhanced Version (v2)
-
 ```bash
-# Use the enhanced version with ChromaDB
-llmlibrarian --v2
-
-# Or set environment variable
-export LLMLIBRARIAN_V2=true
+# Run the tool
 llmlibrarian
-```
 
-### Using the Legacy Version (v1)
-
-```bash
-# Use the original SQLite version
-llmlibrarian --v1
+# Or specify a directory directly
+llmlibrarian ~/my-project
 ```
 
 ## Configuration
@@ -55,7 +45,7 @@ export OPENAI_API_BASE="https://api.openai.com/v1"
 ### Command Line Options
 
 ```bash
-llmlibrarian --v2 [OPTIONS] [DIRECTORY]
+llmlibrarian [OPTIONS] [DIRECTORY]
 
 Options:
   --api-base URL          OpenAI-compatible API base URL
@@ -82,7 +72,7 @@ Once in interactive mode:
 
 ```bash
 # Index and explore a Python project
-llmlibrarian --v2 ~/projects/my-python-app
+llmlibrarian ~/projects/my-python-app
 
 # Query examples:
 🔍 Query: What is the main purpose of this project?
@@ -93,7 +83,7 @@ llmlibrarian --v2 ~/projects/my-python-app
 
 ## Tools Available to AI
 
-The enhanced version provides the AI with system tools:
+The AI has access to system tools:
 
 1. **find_files**: Search for files by name pattern
 2. **grep_content**: Search file contents with regex
@@ -105,7 +95,7 @@ The enhanced version provides the AI with system tools:
 
 ```bash
 pytest tests/
-pytest tests/test_librarian_v2.py -v  # Test enhanced version
+pytest tests/test_librarian.py -v
 ```
 
 ### Code Quality
@@ -117,7 +107,6 @@ mypy src/
 
 ## Architecture
 
-The enhanced version uses:
 - **ChromaDB**: Vector database for embeddings
 - **LangChain**: Text splitting and document processing
 - **Sentence Transformers**: Generate embeddings locally
@@ -126,7 +115,7 @@ The enhanced version uses:
 ## Examples
 
 See the `examples/` directory:
-- `enhanced_demo.ipynb`: Jupyter notebook demonstrating v2 features
+- `enhanced_demo.ipynb`: Jupyter notebook demonstrating features
 - `turing_way.ipynb`: Original demo notebook
 
 ## License
