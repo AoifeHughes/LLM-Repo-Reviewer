@@ -1,27 +1,134 @@
-# WhatsPpGitHub
+# LLM Librarian
 
-## Setup Token
+An AI-powered code exploration tool that indexes your codebase and provides intelligent Q&A capabilities using ChromaDB for vector storage and OpenAI-compatible APIs.
 
-Currently, this project reads in your GitHub token from the shell environment.
-For example either use or add to your shell rc:
+## Features
 
-```bash
-export GITHUB_AUTH=your_token_here
-```
+- 🚀 **Enhanced Version (v2)** with ChromaDB vector storage
+- 🔧 **Tool Calling**: AI can use `find` and `grep` commands for precise searches  
+- 💾 **Smart Caching**: Only reprocess changed files
+- 📚 **Multiple File Types**: Python, Markdown, PDF, YAML, JSON, and more
+- 🤖 **OpenAI-Compatible**: Works with local LLMs (Ollama, llama.cpp, etc.)
+- 🔍 **Interactive CLI**: Real-time Q&A about your codebase
 
-## Running
-
-To run this project please install via pip
-
-```bash
-pip install .
-```
-
-Then run the following command
+## Installation
 
 ```bash
-whatsupgithub
+pip install -e .
 ```
 
-For now, there are no extra parameters or conditions to add. A table should just
-be produced for you to use!
+## Quick Start
+
+### Using the Enhanced Version (v2)
+
+```bash
+# Use the enhanced version with ChromaDB
+llmlibrarian --v2
+
+# Or set environment variable
+export LLMLIBRARIAN_V2=true
+llmlibrarian
+```
+
+### Using the Legacy Version (v1)
+
+```bash
+# Use the original SQLite version
+llmlibrarian --v1
+```
+
+## Configuration
+
+### API Configuration
+
+The tool uses OpenAI-compatible APIs. Configure your endpoint:
+
+```bash
+# For local Ollama server
+export OPENAI_API_BASE="http://localhost:11434/v1"
+
+# For OpenAI
+export OPENAI_API_KEY="your-api-key"
+export OPENAI_API_BASE="https://api.openai.com/v1"
+```
+
+### Command Line Options
+
+```bash
+llmlibrarian --v2 [OPTIONS] [DIRECTORY]
+
+Options:
+  --api-base URL          OpenAI-compatible API base URL
+  --api-key KEY           API key
+  --embedding-model NAME  HuggingFace embedding model (default: all-MiniLM-L6-v2)
+  --chunk-size SIZE       Text chunk size (default: 1000)
+  --chunk-overlap SIZE    Chunk overlap (default: 200)
+  --collection NAME       ChromaDB collection prefix
+  -v, --verbose           Enable verbose output
+  --no-interactive        Exit after indexing
+```
+
+## Interactive Commands
+
+Once in interactive mode:
+
+- **Ask questions**: Type naturally to query your codebase
+- `/tools on|off`: Enable/disable AI tool usage (find, grep)
+- `/history`: View recent queries
+- `/reindex <path>`: Reindex a directory
+- `/quit` or `/exit`: Exit the program
+
+## Example Usage
+
+```bash
+# Index and explore a Python project
+llmlibrarian --v2 ~/projects/my-python-app
+
+# Query examples:
+🔍 Query: What is the main purpose of this project?
+🔍 Query: Find all test files
+🔍 Query: Show me the database models
+🔍 Query: Search for all TODO comments
+```
+
+## Tools Available to AI
+
+The enhanced version provides the AI with system tools:
+
+1. **find_files**: Search for files by name pattern
+2. **grep_content**: Search file contents with regex
+3. **get_file_info**: Get file metadata and statistics
+
+## Development
+
+### Running Tests
+
+```bash
+pytest tests/
+pytest tests/test_librarian_v2.py -v  # Test enhanced version
+```
+
+### Code Quality
+
+```bash
+ruff check src/
+mypy src/
+```
+
+## Architecture
+
+The enhanced version uses:
+- **ChromaDB**: Vector database for embeddings
+- **LangChain**: Text splitting and document processing
+- **Sentence Transformers**: Generate embeddings locally
+- **OpenAI API**: Compatible with any LLM server
+
+## Examples
+
+See the `examples/` directory:
+- `enhanced_demo.ipynb`: Jupyter notebook demonstrating v2 features
+- `turing_way.ipynb`: Original demo notebook
+
+## License
+
+MIT License - see LICENSE file for details.
