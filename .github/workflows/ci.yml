@@ -1,0 +1,99 @@
+name: CI
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+
+env:
+  # Disable tokenizers parallelism warning
+  TOKENIZERS_PARALLELISM: false
+
+jobs:
+  test:
+    name: Test Python 3.12
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Python 3.12
+      uses: actions/setup-python@v4
+      with:
+        python-version: "3.12"
+
+    - name: Cache pip dependencies
+      uses: actions/cache@v3
+      with:
+        path: ~/.cache/pip
+        key: ${{ runner.os }}-pip-py3.12-${{ hashFiles('**/pyproject.toml') }}
+        restore-keys: |
+          ${{ runner.os }}-pip-py3.12-
+          ${{ runner.os }}-pip-
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -e .
+        pip install pytest pytest-asyncio
+        # Ensure langchain-huggingface is installed (should be in pyproject.toml)
+        pip install langchain-huggingface
+
+    - name: Test package installation
+      run: |
+        python -c "from LLMRepoReviewer.repo_reviewer import RepoReviewer; print('✅ Package imports successfully')"
+        llm-repo-reviewer --help
+
+    - name: Run unit tests
+      run: |
+        python run_tests.py unit --verbose
+
+    - name: Run integration tests (mocked LLM)
+      run: |
+        python run_tests.py integration --verbose
+
+    - name: Run legacy compatibility tests
+      run: |
+        python -m pytest tests/test_repo_reviewer.py -v
+
+  test-installation:
+    name: Test Installation Methods
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        install-method:
+          - "pip install -e ."
+          - "pip install ."
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Python 3.12
+      uses: actions/setup-python@v4
+      with:
+        python-version: "3.12"
+
+    - name: Install package using ${{ matrix.install-method }}
+      run: |
+        python -m pip install --upgrade pip
+        ${{ matrix.install-method }}
+        pip install pytest
+
+    - name: Test basic functionality
+      run: |
+        python -c "
+        from LLMRepoReviewer.repo_reviewer import RepoReviewer
+        reviewer = RepoReviewer()
+        tools = reviewer.list_tools()
+        print(f'✅ Available tools: {tools}')
+        assert len(tools) >= 3, 'Should have at least 3 tools'
+        print('✅ Installation test passed')
+        "
+
+    - name: Test CLI functionality
+      run: |
+        llm-repo-reviewer --help > /dev/null
+        echo "✅ CLI help works"

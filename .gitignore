@@ -226,3 +226,8 @@ pyrightconfig.json
 .ionide
 
 # End of https://www.toptal.com/developers/gitignore/api/python,visualstudiocode,macos
+
+# LLM Repo Reviewer specific
+reviewing/
+*_analysis_report.md
+analysis_report.md
