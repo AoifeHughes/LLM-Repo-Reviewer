@@ -14,6 +14,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 import PyPDF2
 from tqdm import tqdm
 import subprocess
+import git
 from collections import Counter
 from .analysis_template import ANALYSIS_QUESTIONS, REPORT_TEMPLATE, SUMMARY_PROMPT
 
@@ -21,8 +22,8 @@ from .analysis_template import ANALYSIS_QUESTIONS, REPORT_TEMPLATE, SUMMARY_PROM
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
 
-class Librarian:
-    """LLM Librarian using ChromaDB for vector storage and OpenAI API for interactions"""
+class RepoReviewer:
+    """AI-powered repository analysis and code review tool using ChromaDB for vector storage and OpenAI API for interactions"""
 
     def __init__(
         self,
@@ -962,18 +963,9 @@ class Librarian:
                 max_tokens=2000,
             )
 
-            # Try to parse JSON response
-            try:
-                summary_json = json.loads(response.choices[0].message.content)
-                return summary_json
-            except json.JSONDecodeError:
-                # Fallback if JSON parsing fails
-                return {
-                    "executive_summary": response.choices[0].message.content,
-                    "strengths": ["Analysis completed"],
-                    "improvements": ["See detailed analysis above"],
-                    "recommendations": ["Review the detailed findings"],
-                }
+            # Parse markdown response
+            response_text = response.choices[0].message.content
+            return self._parse_markdown_summary(response_text)
 
         except Exception as e:
             return {
@@ -1053,3 +1045,137 @@ class Librarian:
         )
 
         return report
+
+    def _parse_markdown_summary(self, response_text: str) -> Dict[str, Any]:
+        """Parse markdown-formatted summary response into structured data"""
+        try:
+            summary_data = {
+                "executive_summary": "",
+                "strengths": [],
+                "improvements": [],
+                "recommendations": [],
+            }
+
+            # Split response into sections
+            lines = response_text.strip().split("\n")
+            current_section = None
+            current_content = []
+
+            for line in lines:
+                line = line.strip()
+
+                # Check for section headers
+                if line.startswith("**EXECUTIVE SUMMARY**"):
+                    if current_section:
+                        self._process_section(
+                            summary_data, current_section, current_content
+                        )
+                    current_section = "executive_summary"
+                    current_content = []
+                elif line.startswith("**STRENGTHS**"):
+                    if current_section:
+                        self._process_section(
+                            summary_data, current_section, current_content
+                        )
+                    current_section = "strengths"
+                    current_content = []
+                elif line.startswith("**AREAS FOR IMPROVEMENT**"):
+                    if current_section:
+                        self._process_section(
+                            summary_data, current_section, current_content
+                        )
+                    current_section = "improvements"
+                    current_content = []
+                elif line.startswith("**RECOMMENDATIONS**"):
+                    if current_section:
+                        self._process_section(
+                            summary_data, current_section, current_content
+                        )
+                    current_section = "recommendations"
+                    current_content = []
+                elif line and current_section:
+                    # Add non-empty lines to current section
+                    current_content.append(line)
+
+            # Process the last section
+            if current_section:
+                self._process_section(summary_data, current_section, current_content)
+
+            return summary_data
+
+        except Exception as e:
+            print(f"Warning: Error parsing summary response: {e}")
+            # Return fallback data if parsing fails
+            return {
+                "executive_summary": (
+                    response_text[:500] + "..."
+                    if len(response_text) > 500
+                    else response_text
+                ),
+                "strengths": ["Automated analysis completed"],
+                "improvements": ["Manual review recommended"],
+                "recommendations": ["Check analysis details for specific insights"],
+            }
+
+    def _process_section(
+        self, summary_data: Dict[str, Any], section: str, content: List[str]
+    ):
+        """Process content for a specific section"""
+        if section == "executive_summary":
+            # Join paragraphs with newlines
+            summary_data[section] = "\n\n".join(content)
+        else:
+            # For lists (strengths, improvements, recommendations)
+            items = []
+            for line in content:
+                # Remove bullet point markers and clean up
+                clean_line = line.lstrip("- *").strip()
+                if clean_line:
+                    items.append(clean_line)
+            summary_data[section] = items
+
+    @staticmethod
+    def clone_github_repo(github_url: str, target_dir: str = "reviewing") -> str:
+        """Clone a GitHub repository to a local directory for analysis"""
+        import re
+        import shutil
+
+        # Ensure target directory exists
+        os.makedirs(target_dir, exist_ok=True)
+
+        # Extract repo name from URL
+        repo_name_match = re.search(
+            r"github\.com/[^/]+/([^/]+?)(?:\.git)?/?$", github_url
+        )
+        if not repo_name_match:
+            raise ValueError(f"Invalid GitHub URL: {github_url}")
+
+        repo_name = repo_name_match.group(1)
+        local_path = os.path.join(target_dir, repo_name)
+
+        # Remove existing directory if it exists
+        if os.path.exists(local_path):
+            print(f"🗑️  Removing existing directory: {local_path}")
+            shutil.rmtree(local_path)
+
+        # Clone the repository
+        print(f"📥 Cloning repository: {github_url}")
+        try:
+            git.Repo.clone_from(github_url, local_path)
+            print(f"✅ Repository cloned to: {local_path}")
+            return local_path
+        except git.exc.GitError as e:
+            raise RuntimeError(f"Failed to clone repository: {e}")
+
+    def analyze_github_repo(self, github_url: str, output_file: str = None) -> str:
+        """Clone a GitHub repo and perform analysis"""
+        # Clone the repository
+        local_path = self.clone_github_repo(github_url)
+
+        # Generate output filename if not provided
+        if output_file is None:
+            repo_name = os.path.basename(local_path)
+            output_file = f"{repo_name}_analysis_report.md"
+
+        # Run auto-analysis
+        return self.auto_analyze(local_path, output_file)

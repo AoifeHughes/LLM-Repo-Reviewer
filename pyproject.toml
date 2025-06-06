@@ -4,11 +4,11 @@ build-backend = "hatchling.build"
 
 
 [project]
-name = "llmlibrarian"
+name = "llm-repo-reviewer"
 authors = [
   { name = "Aoife Hughes", email = "aoife1hughes@gmail.com" },
 ]
-description = "a package for running a digital librarian"
+description = "AI-powered repository analysis and code review tool"
 readme = "README.md"
 requires-python = ">=3.8"
 classifiers = [
@@ -42,20 +42,24 @@ dependencies = [
     "langchain",
     "langchain-community",
     "sentence-transformers",
+    "gitpython",
 ]
 
 [project.urls]
-Homepage = "https://github.com/aoifehughes/llmlibrarian"
-"Bug Tracker" = "https://github.com/aoifehughes/llmlibrarian/issues"
-Discussions = "https://github.com/aoifehughes/llmlibrarian/discussions"
-Changelog = "https://github.com/aoifehughes/llmlibrarian/releases"
+Homepage = "https://github.com/aoifehughes/llm-repo-reviewer"
+"Bug Tracker" = "https://github.com/aoifehughes/llm-repo-reviewer/issues"
+Discussions = "https://github.com/aoifehughes/llm-repo-reviewer/discussions"
+Changelog = "https://github.com/aoifehughes/llm-repo-reviewer/releases"
 [tool.hatch]
-version.path = "src/llmlibrarian/__init__.py"
+version.path = "src/LLMRepoReviewer/__init__.py"
 envs.default.dependencies = [
   "pytest",
   "pytest-cov",
   "pytest-asyncio",
 ]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/LLMRepoReviewer"]
 
 
 [tool.pytest.ini_options]
@@ -73,7 +77,7 @@ testpaths = [
 
 
 [tool.coverage]
-run.source = ["llmlibrarian"]
+run.source = ["LLMRepoReviewer"]
 port.exclude_lines = [
   'pragma: no cover',
   '\.\.\.',
@@ -134,4 +138,4 @@ flake8-unused-arguments.ignore-variadic-names = true
 "noxfile.py" = ["T20"]
 
 [project.scripts]
-llmlibrarian = "LLMLibrarian.__main__:main"
+llm-repo-reviewer = "LLMRepoReviewer.__main__:main"

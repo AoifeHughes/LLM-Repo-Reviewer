@@ -1,23 +1,23 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""CLI interface for LLMLibrarian with ChromaDB and tool calling"""
+"""CLI interface for LLM Repo Reviewer with ChromaDB and tool calling"""
 
 import os
 import sys
 import argparse
-from .librarian import Librarian
+from .repo_reviewer import RepoReviewer
 
 
 def print_banner():
     """Print welcome banner"""
     print("\n" + "=" * 60)
-    print("🤖 LLM Librarian")
+    print("🤖 LLM Repo Reviewer")
     print("=" * 60)
-    print("AI-powered code exploration with ChromaDB and tool calling")
+    print("AI-powered repository analysis and code review tool")
     print("-" * 60)
 
 
-def interactive_mode(librarian: Librarian, verbose: bool = False):
+def interactive_mode(reviewer: RepoReviewer, verbose: bool = False):
     """Run interactive query mode"""
     print("\nEntering interactive mode. Commands:")
     print("- Type your questions to query the indexed content")
@@ -41,7 +41,7 @@ def interactive_mode(librarian: Librarian, verbose: bool = False):
                 print("\n👋 Goodbye!")
                 break
             elif query.lower() == "/history":
-                history = librarian.get_session_history()
+                history = reviewer.get_session_history()
                 if history:
                     print("\n📜 Recent queries:")
                     for entry in history:
@@ -64,7 +64,7 @@ def interactive_mode(librarian: Librarian, verbose: bool = False):
                     path = parts[1]
                     print(f"\n♻️  Reindexing {path}...")
                     try:
-                        stats = librarian.process_directory(path)
+                        stats = reviewer.process_directory(path)
                         print(
                             f"✓ Indexed {stats['processed_files']} files ({stats['cached_files']} cached)"
                         )
@@ -78,7 +78,7 @@ def interactive_mode(librarian: Librarian, verbose: bool = False):
             print("\n💭 Thinking...", end="", flush=True)
 
             try:
-                response = librarian.query(query, use_tools=use_tools)
+                response = reviewer.query(query, use_tools=use_tools)
                 print("\r" + " " * 50 + "\r", end="")  # Clear "Thinking..." message
                 print(f"🤖 Assistant:\n{response}")
             except Exception as e:
@@ -98,13 +98,13 @@ def interactive_mode(librarian: Librarian, verbose: bool = False):
 def main():
     """Main entry point"""
     parser = argparse.ArgumentParser(
-        description="LLM Librarian - AI-powered code exploration"
+        description="LLM Repo Reviewer - AI-powered repository analysis"
     )
 
     parser.add_argument(
-        "directory",
+        "target",
         nargs="?",
-        help="Directory to index (interactive prompt if not provided)",
+        help="Directory path or GitHub URL to analyze (interactive prompt if not provided)",
     )
 
     parser.add_argument(
@@ -163,10 +163,10 @@ def main():
 
     print_banner()
 
-    # Initialize librarian
-    print("\n📚 Initializing LLM Librarian...")
+    # Initialize reviewer
+    print("\n📚 Initializing LLM Repo Reviewer...")
     try:
-        librarian = Librarian(
+        reviewer = RepoReviewer(
             api_base_url=args.api_base,
             api_key=args.api_key,
             embedding_model_name=args.embedding_model,
@@ -174,7 +174,7 @@ def main():
             chunk_overlap=args.chunk_overlap,
             collection_name=args.collection,
         )
-        print("✓ Librarian initialized")
+        print("✓ Repo Reviewer initialized")
     except Exception as e:
         print(f"❌ Failed to initialize: {e}")
         if args.verbose:
@@ -183,24 +183,38 @@ def main():
             traceback.print_exc()
         sys.exit(1)
 
-    # Get directory to index
-    if args.directory:
-        directory = args.directory
+    # Get target to analyze
+    if args.target:
+        target = args.target
     else:
-        directory = input("\n📁 Enter directory path to index: ").strip()
+        target = input("\n📁 Enter directory path or GitHub URL to analyze: ").strip()
 
-    if not directory:
-        print("❌ No directory provided")
+    if not target:
+        print("❌ No target provided")
         sys.exit(1)
 
-    # Expand user path
-    directory = os.path.expanduser(directory)
-    directory = os.path.abspath(directory)
+    # Determine if target is a GitHub URL or local path
+    is_github_url = target.startswith(
+        ("https://github.com/", "git@github.com:", "github.com/")
+    )
+
+    if is_github_url:
+        # Handle GitHub URL
+        if not target.startswith("https://"):
+            target = f"https://{target}" if target.startswith("github.com/") else target
+        directory = target  # Will be handled by analyze_github_repo
+    else:
+        # Handle local directory
+        directory = os.path.expanduser(target)
+        directory = os.path.abspath(directory)
 
     # Check if auto-analyze mode
     if args.auto_analyze:
         try:
-            report_file = librarian.auto_analyze(directory, args.output)
+            if is_github_url:
+                report_file = reviewer.analyze_github_repo(target, args.output)
+            else:
+                report_file = reviewer.auto_analyze(directory, args.output)
             print("\n🎉 Auto-analysis complete!")
             print(f"📄 Report saved to: {report_file}")
 
@@ -230,7 +244,14 @@ def main():
         # Index the directory
         print(f"\n🔄 Indexing directory: {directory}")
         try:
-            stats = librarian.process_directory(directory)
+            if is_github_url:
+                print(f"\n🔄 Cloning and indexing repository: {target}")
+                local_path = reviewer.clone_github_repo(target)
+                stats = reviewer.process_directory(local_path)
+                directory = local_path  # Update for interactive mode
+            else:
+                print(f"\n🔄 Indexing directory: {directory}")
+                stats = reviewer.process_directory(directory)
             print("\n✅ Indexing complete!")
             print(f"   Total files: {stats['total_files']}")
             print(f"   Cached files: {stats['cached_files']}")
@@ -245,7 +266,7 @@ def main():
 
         # Enter interactive mode unless disabled
         if not args.no_interactive:
-            interactive_mode(librarian, verbose=args.verbose)
+            interactive_mode(reviewer, verbose=args.verbose)
 
 
 if __name__ == "__main__":

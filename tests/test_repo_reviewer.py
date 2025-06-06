@@ -1,11 +1,11 @@
 # -*- coding: utf-8 -*-
-"""Tests for the librarian with ChromaDB"""
+"""Tests for the repo reviewer with ChromaDB"""
 
 import pytest
 import tempfile
 import os
 from unittest.mock import Mock, patch, MagicMock
-from LLMLibrarian.librarian import Librarian
+from LLMRepoReviewer.repo_reviewer import RepoReviewer
 
 
 @pytest.fixture
@@ -70,7 +70,7 @@ def mock_chromadb():
 @pytest.fixture
 def mock_embeddings():
     """Mock HuggingFace embeddings"""
-    with patch("LLMLibrarian.librarian.HuggingFaceEmbeddings") as mock:
+    with patch("LLMRepoReviewer.repo_reviewer.HuggingFaceEmbeddings") as mock:
         mock_embeddings = MagicMock()
         mock_embeddings.embed_documents.return_value = [[0.1] * 384]  # Mock embeddings
         mock_embeddings.embed_query.return_value = [0.1] * 384
@@ -78,28 +78,28 @@ def mock_embeddings():
         yield mock_embeddings
 
 
-class TestLibrarian:
-    """Test cases for Librarian"""
+class TestRepoReviewer:
+    """Test cases for RepoReviewer"""
 
     def test_initialization(self, mock_chromadb, mock_embeddings):
-        """Test librarian initialization"""
-        with patch("LLMLibrarian.librarian.OpenAI"):
-            librarian = Librarian()
+        """Test repo reviewer initialization"""
+        with patch("LLMRepoReviewer.repo_reviewer.OpenAI"):
+            reviewer = RepoReviewer()
 
-            assert librarian.current_session_id is not None
-            assert librarian.current_session_id.startswith("session_")
-            assert len(librarian.tools) == 3  # find_files, grep_content, get_file_info
+            assert reviewer.current_session_id is not None
+            assert reviewer.current_session_id.startswith("session_")
+            assert len(reviewer.tools) == 3  # find_files, grep_content, get_file_info
 
     def test_file_hash_calculation(
         self, temp_directory, mock_chromadb, mock_embeddings
     ):
         """Test file hash calculation"""
-        with patch("LLMLibrarian.librarian.OpenAI"):
-            librarian = Librarian()
+        with patch("LLMRepoReviewer.repo_reviewer.OpenAI"):
+            reviewer = RepoReviewer()
 
             test_file = os.path.join(temp_directory, "test.py")
-            hash1 = librarian._get_file_hash(test_file)
-            hash2 = librarian._get_file_hash(test_file)
+            hash1 = reviewer._get_file_hash(test_file)
+            hash2 = reviewer._get_file_hash(test_file)
 
             assert hash1 is not None
             assert hash1 == hash2  # Same file should have same hash
@@ -107,44 +107,44 @@ class TestLibrarian:
 
     def test_text_extraction(self, temp_directory, mock_chromadb, mock_embeddings):
         """Test text extraction from files"""
-        with patch("LLMLibrarian.librarian.OpenAI"):
-            librarian = Librarian()
+        with patch("LLMRepoReviewer.repo_reviewer.OpenAI"):
+            reviewer = RepoReviewer()
 
             # Test Python file
             py_file = os.path.join(temp_directory, "test.py")
-            text = librarian._extract_text_from_file(py_file)
+            text = reviewer._extract_text_from_file(py_file)
             assert "def hello():" in text
 
             # Test Markdown file
             md_file = os.path.join(temp_directory, "README.md")
-            text = librarian._extract_text_from_file(md_file)
+            text = reviewer._extract_text_from_file(md_file)
             assert "# Test Project" in text
 
     def test_process_directory(self, temp_directory, mock_chromadb, mock_embeddings):
         """Test directory processing"""
-        with patch("LLMLibrarian.librarian.OpenAI"):
-            librarian = Librarian()
+        with patch("LLMRepoReviewer.repo_reviewer.OpenAI"):
+            reviewer = RepoReviewer()
 
-            stats = librarian.process_directory(temp_directory)
+            stats = reviewer.process_directory(temp_directory)
 
             assert stats["total_files"] == 4
-            assert stats["session_id"] == librarian.current_session_id
+            assert stats["session_id"] == reviewer.current_session_id
             assert "processed_files" in stats
             assert "cached_files" in stats
 
     def test_file_caching(self, temp_directory, mock_chromadb, mock_embeddings):
         """Test file caching mechanism"""
-        with patch("LLMLibrarian.librarian.OpenAI"):
-            librarian = Librarian()
+        with patch("LLMRepoReviewer.repo_reviewer.OpenAI"):
+            reviewer = RepoReviewer()
 
             test_file = os.path.join(temp_directory, "test.py")
 
             # First check should return False (not cached)
-            assert not librarian._check_file_cache(test_file)
+            assert not reviewer._check_file_cache(test_file)
 
             # Update cache
-            file_hash = librarian._get_file_hash(test_file)
-            librarian._update_file_cache(
+            file_hash = reviewer._get_file_hash(test_file)
+            reviewer._update_file_cache(
                 test_file, file_hash, ["chunk1", "chunk2"], {"test": "metadata"}
             )
 
@@ -154,16 +154,18 @@ class TestLibrarian:
             }
 
             # Now it should be cached
-            assert librarian._check_file_cache(test_file)
+            assert reviewer._check_file_cache(test_file)
 
     def test_query_without_tools(
         self, mock_chromadb, mock_embeddings, mock_openai_client
     ):
         """Test querying without tool usage"""
-        with patch("LLMLibrarian.librarian.OpenAI", return_value=mock_openai_client):
-            librarian = Librarian()
+        with patch(
+            "LLMRepoReviewer.repo_reviewer.OpenAI", return_value=mock_openai_client
+        ):
+            reviewer = RepoReviewer()
 
-            response = librarian.query(
+            response = reviewer.query(
                 "What is the purpose of this code?", use_tools=False
             )
 
@@ -172,10 +174,10 @@ class TestLibrarian:
 
     def test_tool_definitions(self, mock_chromadb, mock_embeddings):
         """Test tool definitions are properly structured"""
-        with patch("LLMLibrarian.librarian.OpenAI"):
-            librarian = Librarian()
+        with patch("LLMRepoReviewer.repo_reviewer.OpenAI"):
+            reviewer = RepoReviewer()
 
-            tools = librarian.tools
+            tools = reviewer.tools
             tool_names = [tool["function"]["name"] for tool in tools]
 
             assert "find_files" in tool_names
@@ -190,14 +192,14 @@ class TestLibrarian:
 
     def test_find_files_tool(self, temp_directory, mock_chromadb, mock_embeddings):
         """Test find_files tool execution"""
-        with patch("LLMLibrarian.librarian.OpenAI"):
-            librarian = Librarian()
+        with patch("LLMRepoReviewer.repo_reviewer.OpenAI"):
+            reviewer = RepoReviewer()
 
             with patch("subprocess.run") as mock_run:
                 mock_run.return_value.returncode = 0
                 mock_run.return_value.stdout = "test.py\nREADME.md"
 
-                result = librarian._tool_find_files(
+                result = reviewer._tool_find_files(
                     path=temp_directory, name_pattern="*.py"
                 )
 
@@ -206,14 +208,14 @@ class TestLibrarian:
 
     def test_grep_content_tool(self, temp_directory, mock_chromadb, mock_embeddings):
         """Test grep_content tool execution"""
-        with patch("LLMLibrarian.librarian.OpenAI"):
-            librarian = Librarian()
+        with patch("LLMRepoReviewer.repo_reviewer.OpenAI"):
+            reviewer = RepoReviewer()
 
             with patch("subprocess.run") as mock_run:
                 mock_run.return_value.returncode = 0
                 mock_run.return_value.stdout = "test.py:1:def hello():"
 
-                result = librarian._tool_grep_content(
+                result = reviewer._tool_grep_content(
                     pattern="hello", path=temp_directory
                 )
 
@@ -222,11 +224,11 @@ class TestLibrarian:
 
     def test_get_file_info_tool(self, temp_directory, mock_chromadb, mock_embeddings):
         """Test get_file_info tool execution"""
-        with patch("LLMLibrarian.librarian.OpenAI"):
-            librarian = Librarian()
+        with patch("LLMRepoReviewer.repo_reviewer.OpenAI"):
+            reviewer = RepoReviewer()
 
             test_file = os.path.join(temp_directory, "test.py")
-            result = librarian._tool_get_file_info(file_path=test_file)
+            result = reviewer._tool_get_file_info(file_path=test_file)
 
             assert test_file in result
             assert "size" in result
@@ -235,19 +237,19 @@ class TestLibrarian:
 
     def test_session_history(self, mock_chromadb, mock_embeddings):
         """Test session history tracking"""
-        with patch("LLMLibrarian.librarian.OpenAI"):
-            librarian = Librarian()
+        with patch("LLMRepoReviewer.repo_reviewer.OpenAI"):
+            reviewer = RepoReviewer()
 
             # Log some entries
-            librarian._log_to_session({"type": "test", "content": "Test entry"})
+            reviewer._log_to_session({"type": "test", "content": "Test entry"})
 
             # Mock the session collection query
             mock_chromadb.return_value.get_collection.return_value.query.return_value = {
                 "documents": [['{"type": "test", "content": "Test entry"}']],
-                "metadatas": [{"session_id": librarian.current_session_id}],
+                "metadatas": [{"session_id": reviewer.current_session_id}],
             }
 
-            history = librarian.get_session_history()
+            history = reviewer.get_session_history()
 
             assert len(history) > 0
             assert history[0]["type"] == "test"
@@ -255,18 +257,18 @@ class TestLibrarian:
 
     def test_error_handling(self, mock_chromadb, mock_embeddings):
         """Test error handling in various scenarios"""
-        with patch("LLMLibrarian.librarian.OpenAI"):
-            librarian = Librarian()
+        with patch("LLMRepoReviewer.repo_reviewer.OpenAI"):
+            reviewer = RepoReviewer()
 
             # Test with non-existent directory
             with pytest.raises(ValueError, match="Directory not found"):
-                librarian.process_directory("/non/existent/directory")
+                reviewer.process_directory("/non/existent/directory")
 
             # Test with invalid file for hash
-            assert librarian._get_file_hash("/non/existent/file.txt") is None
+            assert reviewer._get_file_hash("/non/existent/file.txt") is None
 
             # Test tool execution with error
-            result = librarian._execute_tool("unknown_tool", {})
+            result = reviewer._execute_tool("unknown_tool", {})
             assert "Unknown tool" in result
 
 
