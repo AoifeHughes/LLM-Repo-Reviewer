@@ -1,22 +1,25 @@
-# -*- coding: utf-8 -*-
-import os
-import chromadb
-from langchain.text_splitter import RecursiveCharacterTextSplitter
-from langchain_community.embeddings import HuggingFaceEmbeddings
-from langchain.schema import Document
-from openai import OpenAI
+import contextlib
 import hashlib
 import json
-from datetime import datetime
-import uuid
-from typing import List, Dict, Any, Optional
-from concurrent.futures import ThreadPoolExecutor, as_completed
-import PyPDF2
-from tqdm import tqdm
+import os
 import subprocess
-import git
+import uuid
 from collections import Counter
-from .analysis_template import ANALYSIS_QUESTIONS, REPORT_TEMPLATE, SUMMARY_PROMPT
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from datetime import datetime
+from typing import Any, Dict, List, Optional
+
+import chromadb
+import git
+import pypdf
+from langchain.schema import Document
+from langchain.text_splitter import RecursiveCharacterTextSplitter
+from langchain_huggingface import HuggingFaceEmbeddings
+from openai import OpenAI
+from tqdm import tqdm
+
+from .analysis_template import ANALYSIS_QUESTIONS, REPORT_TEMPLATE
+from .tools import default_registry as tool_registry
 
 # Suppress tokenizers parallelism warning
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
@@ -58,8 +61,9 @@ class RepoReviewer:
         self.current_session_id = None
         self._start_new_session()
 
-        # Tool definitions
-        self.tools = self._define_tools()
+        # Tool registry
+        self.tool_registry = tool_registry
+        self.tools = self.tool_registry.get_openai_functions()
 
     def _setup_collections(self):
         """Initialize ChromaDB collections"""
@@ -101,7 +105,8 @@ class RepoReviewer:
                 print("✓ Created session collection")
 
         except Exception as e:
-            raise RuntimeError(f"Failed to setup ChromaDB collections: {e}")
+            msg = f"Failed to setup ChromaDB collections: {e}"
+            raise RuntimeError(msg)
 
     def _start_new_session(self):
         """Start a new query session"""
@@ -158,10 +163,8 @@ class RepoReviewer:
             cache_id = f"cache_{hashlib.md5(file_path.encode()).hexdigest()}"
 
             # Remove existing cache entry if any
-            try:
+            with contextlib.suppress(Exception):
                 self.cache_collection.delete(ids=[cache_id])
-            except Exception:
-                pass
 
             # Add new cache entry
             self.cache_collection.add(
@@ -185,7 +188,7 @@ class RepoReviewer:
 
             if ext == ".pdf":
                 return self._extract_pdf_text(file_path)
-            elif ext in [
+            if ext in [
                 ".py",
                 ".md",
                 ".txt",
@@ -196,14 +199,8 @@ class RepoReviewer:
                 ".toml",
                 ".cfg",
                 ".ini",
-            ]:
-                with open(file_path, "r", encoding="utf-8") as f:
-                    return f.read()
-            elif (
-                ext in ["", ".license"]
-                and "LICENSE" in os.path.basename(file_path).upper()
-            ):
-                with open(file_path, "r", encoding="utf-8") as f:
+            ] or (ext in ["", ".license"] and "LICENSE" in os.path.basename(file_path).upper()):
+                with open(file_path, encoding="utf-8") as f:
                     return f.read()
             else:
                 return None
@@ -217,7 +214,7 @@ class RepoReviewer:
         text = ""
         try:
             with open(file_path, "rb") as file:
-                pdf_reader = PyPDF2.PdfReader(file)
+                pdf_reader = pypdf.PdfReader(file)
                 for page_num in range(len(pdf_reader.pages)):
                     page = pdf_reader.pages[page_num]
                     text += page.extract_text() + "\n"
@@ -225,36 +222,66 @@ class RepoReviewer:
             print(f"Error reading PDF {file_path}: {e}")
         return text
 
-    def process_directory(
-        self, directory_path: str, file_pattern: Optional[str] = None
-    ) -> Dict[str, Any]:
-        """Process all files in a directory and store in ChromaDB"""
-        if not os.path.exists(directory_path):
-            raise ValueError(f"Directory not found: {directory_path}")
+    def _get_git_tracked_files(self, directory_path: str) -> List[str]:
+        """Get list of git-tracked files in the directory"""
+        try:
+            # Check if directory is a git repository
+            repo = git.Repo(directory_path)
 
-        # Find all files
+            # Get all tracked files
+            tracked_files = []
+            for item in repo.index.entries:
+                file_path = os.path.join(directory_path, item[0])
+                # Only include files that exist and we can process
+                if os.path.isfile(file_path):
+                    tracked_files.append(file_path)
+
+            return tracked_files
+
+        except (git.exc.InvalidGitRepositoryError, git.exc.GitError):
+            # Fallback to regular file discovery if not a git repo
+            print("⚠️  Not a git repository, falling back to all files")
+            return self._get_all_files_fallback(directory_path)
+
+    def _get_all_files_fallback(self, directory_path: str) -> List[str]:
+        """Fallback method to get all files when not in a git repository"""
         all_files = []
         for root, dirs, files in os.walk(directory_path):
             # Skip hidden directories and common ignore patterns
             dirs[:] = [
                 d
                 for d in dirs
-                if not d.startswith(".")
-                and d not in ["__pycache__", "node_modules", "venv", "env"]
+                if not d.startswith(".") and d not in ["__pycache__", "node_modules", "venv", "env"]
             ]
 
             for file in files:
                 if file.startswith("."):
                     continue
                 file_path = os.path.join(root, file)
-                if file_pattern:
-                    # Use grep to check if file matches pattern
-                    if self._file_matches_pattern(file_path, file_pattern):
-                        all_files.append(file_path)
-                else:
-                    all_files.append(file_path)
+                all_files.append(file_path)
 
-        print(f"Found {len(all_files)} files to process")
+        return all_files
+
+    def process_directory(
+        self, directory_path: str, file_pattern: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """Process all files in a directory and store in ChromaDB"""
+        if not os.path.exists(directory_path):
+            msg = f"Directory not found: {directory_path}"
+            raise ValueError(msg)
+
+        # Get git-tracked files only
+        all_files = self._get_git_tracked_files(directory_path)
+
+        # Apply file pattern filter if specified
+        if file_pattern:
+            filtered_files = []
+            for file_path in all_files:
+                if self._file_matches_pattern(file_path, file_pattern):
+                    filtered_files.append(file_path)
+            all_files = filtered_files
+
+        print(f"Found {len(all_files)} git-tracked files to process")
 
         # Check cache and determine which files need processing
         files_to_process = []
@@ -291,9 +318,7 @@ class RepoReviewer:
                 for fp in file_paths
             }
 
-            for future in tqdm(
-                as_completed(futures), total=len(futures), desc="Processing files"
-            ):
+            for future in tqdm(as_completed(futures), total=len(futures), desc="Processing files"):
                 result = future.result()
                 if result:
                     documents.append(result)
@@ -301,9 +326,7 @@ class RepoReviewer:
         if documents:
             self._store_documents(documents)
 
-    def _process_single_file(
-        self, file_path: str, base_directory: str
-    ) -> Optional[Document]:
+    def _process_single_file(self, file_path: str, base_directory: str) -> Optional[Document]:
         """Process a single file and return a Document object"""
         text = self._extract_text_from_file(file_path)
         if not text:
@@ -333,9 +356,7 @@ class RepoReviewer:
             chunk_ids = []
 
             for i, chunk in enumerate(chunks):
-                chunk_id = (
-                    f"chunk_{hashlib.md5((file_path + str(i)).encode()).hexdigest()}"
-                )
+                chunk_id = f"chunk_{hashlib.md5((file_path + str(i)).encode()).hexdigest()}"
                 chunk.metadata["chunk_id"] = chunk_id
                 chunk.metadata["chunk_index"] = i
                 chunk_ids.append(chunk_id)
@@ -358,19 +379,15 @@ class RepoReviewer:
 
         for chunk in all_chunks:
             metadata = {
-                k: v
-                for k, v in chunk.metadata.items()
-                if isinstance(v, (str, int, float, bool))
+                k: v for k, v in chunk.metadata.items() if isinstance(v, (str, int, float, bool))
             }
             metadatas.append(metadata)
             chunk_ids.append(chunk.metadata["chunk_id"])
 
         # Delete existing chunks for these files
-        for file_path in file_chunk_mapping.keys():
-            try:
+        for file_path in file_chunk_mapping:
+            with contextlib.suppress(Exception):
                 self.content_collection.delete(where={"source": file_path})
-            except Exception:
-                pass
 
         # Add new chunks
         self.content_collection.add(
@@ -393,210 +410,31 @@ class RepoReviewer:
         """Check if file content matches pattern using grep"""
         try:
             result = subprocess.run(
-                ["grep", "-l", pattern, file_path], capture_output=True, text=True
+                ["grep", "-l", pattern, file_path], capture_output=True, text=True, check=False
             )
             return result.returncode == 0
         except Exception:
             return False
 
-    def _define_tools(self) -> List[Dict[str, Any]]:
-        """Define tool functions for OpenAI API"""
-        return [
-            {
-                "type": "function",
-                "function": {
-                    "name": "find_files",
-                    "description": "Find files in the indexed directory using the macOS find command",
-                    "parameters": {
-                        "type": "object",
-                        "properties": {
-                            "path": {
-                                "type": "string",
-                                "description": "Starting directory path (defaults to current indexed directory)",
-                            },
-                            "name_pattern": {
-                                "type": "string",
-                                "description": "File name pattern (e.g., '*.py', 'test_*')",
-                            },
-                            "type": {
-                                "type": "string",
-                                "description": "File type: 'f' for files, 'd' for directories",
-                                "enum": ["f", "d"],
-                            },
-                            "max_depth": {
-                                "type": "integer",
-                                "description": "Maximum depth to search (default: no limit)",
-                            },
-                        },
-                    },
-                },
-            },
-            {
-                "type": "function",
-                "function": {
-                    "name": "grep_content",
-                    "description": "Search file contents using the macOS grep command",
-                    "parameters": {
-                        "type": "object",
-                        "properties": {
-                            "pattern": {
-                                "type": "string",
-                                "description": "Search pattern (supports regular expressions)",
-                            },
-                            "path": {
-                                "type": "string",
-                                "description": "File or directory to search in",
-                            },
-                            "case_insensitive": {
-                                "type": "boolean",
-                                "description": "Case insensitive search (default: false)",
-                            },
-                            "recursive": {
-                                "type": "boolean",
-                                "description": "Search recursively in directories (default: false)",
-                            },
-                            "show_line_numbers": {
-                                "type": "boolean",
-                                "description": "Show line numbers in results (default: true)",
-                            },
-                        },
-                        "required": ["pattern", "path"],
-                    },
-                },
-            },
-            {
-                "type": "function",
-                "function": {
-                    "name": "get_file_info",
-                    "description": "Get detailed information about a file",
-                    "parameters": {
-                        "type": "object",
-                        "properties": {
-                            "file_path": {
-                                "type": "string",
-                                "description": "Path to the file",
-                            }
-                        },
-                        "required": ["file_path"],
-                    },
-                },
-            },
-        ]
+    def register_tool(self, tool) -> None:
+        """Register a new tool with the tool registry"""
+        self.tool_registry.register(tool)
+        # Update the tools list for OpenAI
+        self.tools = self.tool_registry.get_openai_functions()
+
+    def unregister_tool(self, tool_name: str) -> None:
+        """Unregister a tool from the tool registry"""
+        self.tool_registry.unregister(tool_name)
+        # Update the tools list for OpenAI
+        self.tools = self.tool_registry.get_openai_functions()
+
+    def list_tools(self) -> List[str]:
+        """Get a list of all registered tool names"""
+        return self.tool_registry.list_tools()
 
     def _execute_tool(self, tool_name: str, arguments: Dict[str, Any]) -> str:
-        """Execute a tool function and return the result"""
-        try:
-            if tool_name == "find_files":
-                return self._tool_find_files(**arguments)
-            elif tool_name == "grep_content":
-                return self._tool_grep_content(**arguments)
-            elif tool_name == "get_file_info":
-                return self._tool_get_file_info(**arguments)
-            else:
-                return f"Unknown tool: {tool_name}"
-        except Exception as e:
-            return f"Error executing {tool_name}: {str(e)}"
-
-    def _tool_find_files(
-        self,
-        path: str = ".",
-        name_pattern: str = None,
-        type: str = "f",
-        max_depth: int = None,
-    ) -> str:
-        """Execute find command"""
-        cmd = ["find", path]
-
-        if max_depth:
-            cmd.extend(["-maxdepth", str(max_depth)])
-
-        if type:
-            cmd.extend(["-type", type])
-
-        if name_pattern:
-            cmd.extend(["-name", name_pattern])
-
-        try:
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
-            if result.returncode == 0:
-                files = (
-                    result.stdout.strip().split("\n") if result.stdout.strip() else []
-                )
-                return f"Found {len(files)} items:\n" + "\n".join(
-                    files[:20]
-                )  # Limit to 20 results
-            else:
-                return f"Error: {result.stderr}"
-        except subprocess.TimeoutExpired:
-            return "Error: Command timed out"
-        except Exception as e:
-            return f"Error: {str(e)}"
-
-    def _tool_grep_content(
-        self,
-        pattern: str,
-        path: str,
-        case_insensitive: bool = False,
-        recursive: bool = False,
-        show_line_numbers: bool = True,
-    ) -> str:
-        """Execute grep command"""
-        cmd = ["grep"]
-
-        if case_insensitive:
-            cmd.append("-i")
-        if recursive:
-            cmd.append("-r")
-        if show_line_numbers:
-            cmd.append("-n")
-
-        cmd.extend([pattern, path])
-
-        try:
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
-            if result.returncode == 0:
-                lines = (
-                    result.stdout.strip().split("\n") if result.stdout.strip() else []
-                )
-                return f"Found {len(lines)} matches:\n" + "\n".join(
-                    lines[:20]
-                )  # Limit to 20 results
-            elif result.returncode == 1:
-                return "No matches found"
-            else:
-                return f"Error: {result.stderr}"
-        except subprocess.TimeoutExpired:
-            return "Error: Command timed out"
-        except Exception as e:
-            return f"Error: {str(e)}"
-
-    def _tool_get_file_info(self, file_path: str) -> str:
-        """Get file information"""
-        try:
-            if not os.path.exists(file_path):
-                return f"File not found: {file_path}"
-
-            stat = os.stat(file_path)
-            info = {
-                "path": file_path,
-                "size": f"{stat.st_size} bytes",
-                "modified": datetime.fromtimestamp(stat.st_mtime).isoformat(),
-                "is_file": os.path.isfile(file_path),
-                "is_directory": os.path.isdir(file_path),
-            }
-
-            if os.path.isfile(file_path):
-                # Try to get line count
-                try:
-                    with open(file_path, "r", encoding="utf-8") as f:
-                        line_count = sum(1 for _ in f)
-                    info["lines"] = line_count
-                except Exception:
-                    pass
-
-            return json.dumps(info, indent=2)
-        except Exception as e:
-            return f"Error: {str(e)}"
+        """Execute a tool function using the tool registry"""
+        return self.tool_registry.execute_tool(tool_name, arguments)
 
     def query(self, question: str, max_chunks: int = 5, use_tools: bool = True) -> str:
         """Query the indexed content and get an AI-generated response"""
@@ -647,9 +485,7 @@ class RepoReviewer:
 
             # Handle tool calls if present
             if response.choices[0].message.tool_calls:
-                tool_results = self._handle_tool_calls(
-                    response.choices[0].message.tool_calls
-                )
+                tool_results = self._handle_tool_calls(response.choices[0].message.tool_calls)
 
                 # Add assistant message with tool calls
                 messages.append(
@@ -712,9 +548,7 @@ class RepoReviewer:
 
             result = self._execute_tool(function_name, arguments)
 
-            results.append(
-                {"tool_call_id": tool_call.id, "role": "tool", "content": result}
-            )
+            results.append({"tool_call_id": tool_call.id, "role": "tool", "content": result})
 
         return results
 
@@ -758,9 +592,7 @@ class RepoReviewer:
                     {
                         "session_id": self.current_session_id,
                         "type": entry_data.get("type", "unknown"),
-                        "timestamp": entry_data.get(
-                            "timestamp", datetime.now().isoformat()
-                        ),
+                        "timestamp": entry_data.get("timestamp", datetime.now().isoformat()),
                     }
                 ],
                 ids=[entry["entry_id"]],
@@ -784,9 +616,7 @@ class RepoReviewer:
         except Exception:
             return []
 
-    def auto_analyze(
-        self, directory_path: str, output_file: str = "analysis_report.md"
-    ) -> str:
+    def auto_analyze(self, directory_path: str, output_file: str = "analysis_report.md") -> str:
         """Perform comprehensive codebase analysis and generate a report"""
         print("\n🔍 Starting automated codebase analysis...")
 
@@ -798,40 +628,21 @@ class RepoReviewer:
 
         # Run analysis questions
         analysis_results = {}
-        total_questions = sum(len(cat["questions"]) for cat in ANALYSIS_QUESTIONS)
+        total_questions = len(ANALYSIS_QUESTIONS)
 
         with tqdm(total=total_questions, desc="Analyzing codebase") as pbar:
-            for category_data in ANALYSIS_QUESTIONS:
-                category = category_data["category"]
-                questions = category_data["questions"]
-
-                category_results = []
-                for question in questions:
-                    pbar.set_description(f"Analyzing: {category}")
-                    try:
-                        answer = self.query(question, use_tools=True)
-                        category_results.append(
-                            {"question": question, "answer": answer}
-                        )
-                    except Exception as e:
-                        category_results.append(
-                            {
-                                "question": question,
-                                "answer": f"Error during analysis: {str(e)}",
-                            }
-                        )
-                    pbar.update(1)
-
-                analysis_results[category] = category_results
-
-        # Generate summary
-        print("\n📝 Generating summary and recommendations...")
-        summary_data = self._generate_summary(analysis_results)
+            for key, question in ANALYSIS_QUESTIONS.items():
+                pbar.set_description(f"Analyzing: {key}")
+                try:
+                    answer = self.query(question, use_tools=True)
+                    analysis_results[key] = answer
+                except Exception as e:
+                    analysis_results[key] = f"Error during analysis: {e!s}"
+                pbar.update(1)
 
         # Create the report
-        report_content = self._create_report(
-            directory_path, stats, project_stats, analysis_results, summary_data
-        )
+        print("\n📝 Generating report...")
+        report_content = self._create_report(directory_path, stats, project_stats, analysis_results)
 
         # Write report to file
         with open(output_file, "w", encoding="utf-8") as f:
@@ -850,73 +661,61 @@ class RepoReviewer:
             "loc_estimate": 0,
         }
 
-        # Walk through directory and gather stats
-        for root, dirs, files in os.walk(directory_path):
-            # Skip hidden directories
-            dirs[:] = [
-                d
-                for d in dirs
-                if not d.startswith(".")
-                and d not in ["__pycache__", "node_modules", "venv", "env"]
-            ]
+        # Get git-tracked files and gather stats
+        tracked_files = self._get_git_tracked_files(directory_path)
 
-            for file in files:
-                if file.startswith("."):
-                    continue
+        for file_path in tracked_files:
+            file_name = os.path.basename(file_path)
+            _, ext = os.path.splitext(file_name.lower())
 
-                file_path = os.path.join(root, file)
-                _, ext = os.path.splitext(file.lower())
+            stats["total_files"] += 1
+            if ext:
+                stats["file_types"][ext] += 1
 
-                stats["total_files"] += 1
-                if ext:
-                    stats["file_types"][ext] += 1
+                # Language detection
+                if ext in [".py"]:
+                    stats["languages"]["Python"] += 1
+                elif ext in [".js", ".jsx"]:
+                    stats["languages"]["JavaScript"] += 1
+                elif ext in [".ts", ".tsx"]:
+                    stats["languages"]["TypeScript"] += 1
+                elif ext in [".java"]:
+                    stats["languages"]["Java"] += 1
+                elif ext in [".cpp", ".cc", ".cxx"]:
+                    stats["languages"]["C++"] += 1
+                elif ext in [".c"]:
+                    stats["languages"]["C"] += 1
+                elif ext in [".rs"]:
+                    stats["languages"]["Rust"] += 1
+                elif ext in [".go"]:
+                    stats["languages"]["Go"] += 1
+                elif ext in [".rb"]:
+                    stats["languages"]["Ruby"] += 1
+                elif ext in [".php"]:
+                    stats["languages"]["PHP"] += 1
+                elif ext in [".swift"]:
+                    stats["languages"]["Swift"] += 1
+                elif ext in [".kt"]:
+                    stats["languages"]["Kotlin"] += 1
 
-                    # Language detection
-                    if ext in [".py"]:
-                        stats["languages"]["Python"] += 1
-                    elif ext in [".js", ".jsx"]:
-                        stats["languages"]["JavaScript"] += 1
-                    elif ext in [".ts", ".tsx"]:
-                        stats["languages"]["TypeScript"] += 1
-                    elif ext in [".java"]:
-                        stats["languages"]["Java"] += 1
-                    elif ext in [".cpp", ".cc", ".cxx"]:
-                        stats["languages"]["C++"] += 1
-                    elif ext in [".c"]:
-                        stats["languages"]["C"] += 1
-                    elif ext in [".rs"]:
-                        stats["languages"]["Rust"] += 1
-                    elif ext in [".go"]:
-                        stats["languages"]["Go"] += 1
-                    elif ext in [".rb"]:
-                        stats["languages"]["Ruby"] += 1
-                    elif ext in [".php"]:
-                        stats["languages"]["PHP"] += 1
-                    elif ext in [".swift"]:
-                        stats["languages"]["Swift"] += 1
-                    elif ext in [".kt"]:
-                        stats["languages"]["Kotlin"] += 1
-
-                # Estimate lines of code for text files
-                if ext in [
-                    ".py",
-                    ".js",
-                    ".ts",
-                    ".java",
-                    ".cpp",
-                    ".c",
-                    ".rs",
-                    ".go",
-                    ".rb",
-                    ".php",
-                ]:
-                    try:
-                        with open(file_path, "r", encoding="utf-8") as f:
-                            stats["loc_estimate"] += sum(
-                                1 for line in f if line.strip()
-                            )
-                    except Exception:
-                        pass
+            # Estimate lines of code for text files
+            if ext in [
+                ".py",
+                ".js",
+                ".ts",
+                ".java",
+                ".cpp",
+                ".c",
+                ".rs",
+                ".go",
+                ".rb",
+                ".php",
+            ]:
+                try:
+                    with open(file_path, encoding="utf-8") as f:
+                        stats["loc_estimate"] += sum(1 for line in f if line.strip())
+                except Exception:
+                    pass
 
         # Look for dependency files
         dependency_files = [
@@ -934,205 +733,52 @@ class RepoReviewer:
 
         return stats
 
-    def _generate_summary(
-        self, analysis_results: Dict[str, List[Dict[str, str]]]
-    ) -> Dict[str, Any]:
-        """Generate executive summary and recommendations"""
-        # Compile all analysis into a single prompt
-        compiled_analysis = "CODEBASE ANALYSIS RESULTS:\n\n"
-
-        for category, results in analysis_results.items():
-            compiled_analysis += f"## {category}\n\n"
-            for result in results:
-                compiled_analysis += f"Q: {result['question']}\n"
-                compiled_analysis += f"A: {result['answer']}\n\n"
-
-        compiled_analysis += f"\n{SUMMARY_PROMPT}"
-
-        try:
-            response = self.client.chat.completions.create(
-                model="llama.cpp",
-                messages=[
-                    {
-                        "role": "system",
-                        "content": "You are a senior software architect reviewing a codebase. Provide honest, constructive analysis.",
-                    },
-                    {"role": "user", "content": compiled_analysis},
-                ],
-                temperature=0.7,
-                max_tokens=2000,
-            )
-
-            # Parse markdown response
-            response_text = response.choices[0].message.content
-            return self._parse_markdown_summary(response_text)
-
-        except Exception as e:
-            return {
-                "executive_summary": f"Summary generation failed: {str(e)}",
-                "strengths": ["Automated analysis completed"],
-                "improvements": ["Manual review recommended"],
-                "recommendations": ["Check analysis details above"],
-            }
-
     def _create_report(
         self,
         directory_path: str,
         stats: Dict[str, Any],
         project_stats: Dict[str, Any],
-        analysis_results: Dict[str, List[Dict[str, str]]],
-        summary_data: Dict[str, Any],
+        analysis_results: Dict[str, str],
     ) -> str:
         """Create the final markdown report"""
 
-        # Format analysis sections
-        sections = {}
-        for category, results in analysis_results.items():
-            section_content = ""
-            for result in results:
-                section_content += f"**{result['question']}**\n\n{result['answer']}\n\n"
-            sections[category.lower().replace(" & ", "_").replace(" ", "_")] = (
-                section_content
-            )
-
-        # Format lists for template
-        def format_list(items):
-            if isinstance(items, list):
-                return "\n".join(f"- {item}" for item in items)
-            return str(items)
-
         # Create report from template
-        report = REPORT_TEMPLATE.format(
+        return REPORT_TEMPLATE.format(
             date=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             project_path=directory_path,
             total_files=stats.get("total_files", 0),
-            executive_summary=summary_data.get(
-                "executive_summary", "No summary available"
+            primary_languages=(
+                ", ".join(
+                    f"{lang} ({count})" for lang, count in project_stats["languages"].most_common(3)
+                )
+                if project_stats["languages"]
+                else "Not detected"
             ),
-            project_overview=sections.get("project_overview", "No analysis available"),
-            architecture_design=sections.get(
-                "architecture_design", "No analysis available"
-            ),
-            code_quality=sections.get("code_quality", "No analysis available"),
-            documentation=sections.get("documentation", "No analysis available"),
-            security_practices=sections.get(
-                "security_best_practices", "No analysis available"
-            ),
-            development_workflow=sections.get(
-                "development_workflow", "No analysis available"
-            ),
-            strengths=format_list(summary_data.get("strengths", [])),
-            improvements=format_list(summary_data.get("improvements", [])),
-            recommendations=format_list(summary_data.get("recommendations", [])),
-            languages=", ".join(
-                f"{lang} ({count})"
-                for lang, count in project_stats["languages"].most_common(5)
-            ),
-            file_types=", ".join(
-                f"{ext} ({count})"
-                for ext, count in project_stats["file_types"].most_common(10)
+            file_types=(
+                ", ".join(
+                    f"{ext} ({count})" for ext, count in project_stats["file_types"].most_common(8)
+                )
+                if project_stats["file_types"]
+                else "Not analyzed"
             ),
             loc_estimate=(
                 f"~{project_stats['loc_estimate']:,}"
                 if project_stats["loc_estimate"] > 0
                 else "Not calculated"
             ),
-            dependencies=(
-                ", ".join(project_stats["dependencies"])
-                if project_stats["dependencies"]
-                else "None detected"
-            ),
+            purpose=analysis_results.get("purpose", "Analysis not available"),
+            languages=analysis_results.get("languages", "Analysis not available"),
+            dependencies=analysis_results.get("dependencies", "Analysis not available"),
+            architecture=analysis_results.get("architecture", "Analysis not available"),
+            components=analysis_results.get("components", "Analysis not available"),
+            testing=analysis_results.get("testing", "Analysis not available"),
+            code_quality=analysis_results.get("code_quality", "Analysis not available"),
+            documentation=analysis_results.get("documentation", "Analysis not available"),
+            build_tools=analysis_results.get("build_tools", "Analysis not available"),
+            ci_cd=analysis_results.get("ci_cd", "Analysis not available"),
+            config=analysis_results.get("config", "Analysis not available"),
+            security=analysis_results.get("security", "Analysis not available"),
         )
-
-        return report
-
-    def _parse_markdown_summary(self, response_text: str) -> Dict[str, Any]:
-        """Parse markdown-formatted summary response into structured data"""
-        try:
-            summary_data = {
-                "executive_summary": "",
-                "strengths": [],
-                "improvements": [],
-                "recommendations": [],
-            }
-
-            # Split response into sections
-            lines = response_text.strip().split("\n")
-            current_section = None
-            current_content = []
-
-            for line in lines:
-                line = line.strip()
-
-                # Check for section headers
-                if line.startswith("**EXECUTIVE SUMMARY**"):
-                    if current_section:
-                        self._process_section(
-                            summary_data, current_section, current_content
-                        )
-                    current_section = "executive_summary"
-                    current_content = []
-                elif line.startswith("**STRENGTHS**"):
-                    if current_section:
-                        self._process_section(
-                            summary_data, current_section, current_content
-                        )
-                    current_section = "strengths"
-                    current_content = []
-                elif line.startswith("**AREAS FOR IMPROVEMENT**"):
-                    if current_section:
-                        self._process_section(
-                            summary_data, current_section, current_content
-                        )
-                    current_section = "improvements"
-                    current_content = []
-                elif line.startswith("**RECOMMENDATIONS**"):
-                    if current_section:
-                        self._process_section(
-                            summary_data, current_section, current_content
-                        )
-                    current_section = "recommendations"
-                    current_content = []
-                elif line and current_section:
-                    # Add non-empty lines to current section
-                    current_content.append(line)
-
-            # Process the last section
-            if current_section:
-                self._process_section(summary_data, current_section, current_content)
-
-            return summary_data
-
-        except Exception as e:
-            print(f"Warning: Error parsing summary response: {e}")
-            # Return fallback data if parsing fails
-            return {
-                "executive_summary": (
-                    response_text[:500] + "..."
-                    if len(response_text) > 500
-                    else response_text
-                ),
-                "strengths": ["Automated analysis completed"],
-                "improvements": ["Manual review recommended"],
-                "recommendations": ["Check analysis details for specific insights"],
-            }
-
-    def _process_section(
-        self, summary_data: Dict[str, Any], section: str, content: List[str]
-    ):
-        """Process content for a specific section"""
-        if section == "executive_summary":
-            # Join paragraphs with newlines
-            summary_data[section] = "\n\n".join(content)
-        else:
-            # For lists (strengths, improvements, recommendations)
-            items = []
-            for line in content:
-                # Remove bullet point markers and clean up
-                clean_line = line.lstrip("- *").strip()
-                if clean_line:
-                    items.append(clean_line)
-            summary_data[section] = items
 
     @staticmethod
     def clone_github_repo(github_url: str, target_dir: str = "reviewing") -> str:
@@ -1144,11 +790,10 @@ class RepoReviewer:
         os.makedirs(target_dir, exist_ok=True)
 
         # Extract repo name from URL
-        repo_name_match = re.search(
-            r"github\.com/[^/]+/([^/]+?)(?:\.git)?/?$", github_url
-        )
+        repo_name_match = re.search(r"github\.com/[^/]+/([^/]+?)(?:\.git)?/?$", github_url)
         if not repo_name_match:
-            raise ValueError(f"Invalid GitHub URL: {github_url}")
+            msg = f"Invalid GitHub URL: {github_url}"
+            raise ValueError(msg)
 
         repo_name = repo_name_match.group(1)
         local_path = os.path.join(target_dir, repo_name)
@@ -1165,9 +810,10 @@ class RepoReviewer:
             print(f"✅ Repository cloned to: {local_path}")
             return local_path
         except git.exc.GitError as e:
-            raise RuntimeError(f"Failed to clone repository: {e}")
+            msg = f"Failed to clone repository: {e}"
+            raise RuntimeError(msg)
 
-    def analyze_github_repo(self, github_url: str, output_file: str = None) -> str:
+    def analyze_github_repo(self, github_url: str, output_file: Optional[str] = None) -> str:
         """Clone a GitHub repo and perform analysis"""
         # Clone the repository
         local_path = self.clone_github_repo(github_url)

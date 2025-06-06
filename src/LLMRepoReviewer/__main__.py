@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """CLI interface for LLM Repo Reviewer with ChromaDB and tool calling"""
 
+import argparse
 import os
 import sys
-import argparse
+
 from .repo_reviewer import RepoReviewer
 
 
@@ -40,7 +40,7 @@ def interactive_mode(reviewer: RepoReviewer, verbose: bool = False):
             if query.lower() in ["/quit", "/exit", "/q"]:
                 print("\n👋 Goodbye!")
                 break
-            elif query.lower() == "/history":
+            if query.lower() == "/history":
                 history = reviewer.get_session_history()
                 if history:
                     print("\n📜 Recent queries:")
@@ -50,15 +50,15 @@ def interactive_mode(reviewer: RepoReviewer, verbose: bool = False):
                 else:
                     print("No history available")
                 continue
-            elif query.lower() == "/tools on":
+            if query.lower() == "/tools on":
                 use_tools = True
                 print("✓ Tool usage enabled")
                 continue
-            elif query.lower() == "/tools off":
+            if query.lower() == "/tools off":
                 use_tools = False
                 print("✓ Tool usage disabled")
                 continue
-            elif query.lower().startswith("/reindex"):
+            if query.lower().startswith("/reindex"):
                 parts = query.split(maxsplit=1)
                 if len(parts) > 1:
                     path = parts[1]
@@ -137,9 +137,7 @@ def main():
         "--collection", default="llm_librarian", help="ChromaDB collection name prefix"
     )
 
-    parser.add_argument(
-        "-v", "--verbose", action="store_true", help="Enable verbose output"
-    )
+    parser.add_argument("-v", "--verbose", action="store_true", help="Enable verbose output")
 
     parser.add_argument(
         "--no-interactive",
@@ -194,9 +192,7 @@ def main():
         sys.exit(1)
 
     # Determine if target is a GitHub URL or local path
-    is_github_url = target.startswith(
-        ("https://github.com/", "git@github.com:", "github.com/")
-    )
+    is_github_url = target.startswith(("https://github.com/", "git@github.com:", "github.com/"))
 
     if is_github_url:
         # Handle GitHub URL
@@ -221,12 +217,10 @@ def main():
             # Ask if user wants to see the report
             try:
                 show_report = (
-                    input("\nWould you like to view the report now? (y/n): ")
-                    .strip()
-                    .lower()
+                    input("\nWould you like to view the report now? (y/n): ").strip().lower()
                 )
                 if show_report in ["y", "yes"]:
-                    with open(report_file, "r", encoding="utf-8") as f:
+                    with open(report_file, encoding="utf-8") as f:
                         print("\n" + "=" * 80)
                         print(f.read())
                         print("=" * 80)

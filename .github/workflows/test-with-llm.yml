@@ -1,0 +1,107 @@
+name: Tests with Real LLM
+
+on:
+  workflow_dispatch:  # Manual trigger only
+    inputs:
+      llm_endpoint:
+        description: 'LLM API endpoint (e.g., http://localhost:11434/v1)'
+        required: false
+        default: 'http://localhost:11434/v1'
+      run_slow_tests:
+        description: 'Run slow/comprehensive tests'
+        type: boolean
+        required: false
+        default: false
+
+jobs:
+  test-with-llm:
+    runs-on: ubuntu-latest
+
+    # Only run if LLM service is available
+    services:
+      ollama:
+        image: ollama/ollama:latest
+        ports:
+          - 11434:11434
+        options: >-
+          --health-cmd "curl -f http://localhost:11434/api/tags || exit 1"
+          --health-interval 30s
+          --health-timeout 10s
+          --health-retries 5
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: "3.11"
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -e .
+        pip install pytest pytest-cov
+        pip install requests  # For LLM health checks
+        pip install langchain-huggingface  # Ensure new langchain package
+
+    - name: Wait for Ollama service
+      run: |
+        echo "Waiting for Ollama service to be ready..."
+        for i in {1..30}; do
+          if curl -f http://localhost:11434/api/tags; then
+            echo "Ollama service is ready!"
+            break
+          fi
+          echo "Attempt $i: Ollama not ready yet, waiting..."
+          sleep 10
+        done
+
+    - name: Pull a small model for testing
+      run: |
+        curl -X POST http://localhost:11434/api/pull -d '{"name":"tinyllama"}'
+        # Wait for model to be available
+        sleep 30
+
+    - name: Run LLM integration tests (fast)
+      run: |
+        python run_tests.py with-llm --api-base "${{ github.event.inputs.llm_endpoint || 'http://localhost:11434/v1' }}" --verbose
+      env:
+        ANTHROPIC_API_KEY: "fake-key-for-local"  # Not used with local LLM
+
+    - name: Run slow LLM tests
+      if: ${{ github.event.inputs.run_slow_tests == 'true' }}
+      run: |
+        python -m pytest tests/test_with_llm.py -v -m "slow" --api-base "${{ github.event.inputs.llm_endpoint || 'http://localhost:11434/v1' }}"
+      env:
+        ANTHROPIC_API_KEY: "fake-key-for-local"
+
+  test-mock-llm-comprehensive:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: "3.11"
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -e .
+        pip install pytest pytest-cov
+
+    - name: Run comprehensive tests (no real LLM required)
+      run: |
+        python run_tests.py all --verbose
+
+    - name: Generate comprehensive coverage report
+      run: |
+        python -m pytest tests/ --cov=LLMRepoReviewer --cov-report=html --cov-report=term --cov-report=xml
+
+    - name: Upload coverage artifacts
+      uses: actions/upload-artifact@v3
+      with:
+        name: coverage-report
+        path: htmlcov/

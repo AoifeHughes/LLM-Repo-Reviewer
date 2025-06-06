@@ -1,64 +1,22 @@
-# -*- coding: utf-8 -*-
 """
 Analysis templates and questions for auto-analyze feature
 """
 
-ANALYSIS_QUESTIONS = [
-    # Project Overview
-    {
-        "category": "Project Overview",
-        "questions": [
-            "What is the main purpose and functionality of this project? Look at the README, main files, and package descriptions.",
-            "What programming languages and frameworks are used? Use tools to find the most common file types and examine configuration files.",
-            "What are the key dependencies and external libraries? Check package.json, requirements.txt, pyproject.toml, and similar files.",
-        ],
-    },
-    # Architecture
-    {
-        "category": "Architecture & Design",
-        "questions": [
-            "What is the overall architecture and design pattern of this codebase? Look at directory structure and main modules.",
-            "What are the main components/modules and how do they interact? Identify core files and their relationships.",
-            "Are there any architectural patterns used (MVC, microservices, modular design, etc.)? Look for common patterns in the code organization.",
-        ],
-    },
-    # Code Quality
-    {
-        "category": "Code Quality",
-        "questions": [
-            "Find and analyze any TODO, FIXME, or HACK comments in the code using grep. What do they indicate about code maturity?",
-            "What testing frameworks and test files are present? Look for test directories and configuration files.",
-            "Are there any obvious code quality issues, duplicated code, or anti-patterns? Look at file sizes and complexity.",
-        ],
-    },
-    # Documentation
-    {
-        "category": "Documentation",
-        "questions": [
-            "Is there a README file? What does it cover and how comprehensive is it?",
-            "How well is the code documented? Look for docstrings, comments, and inline documentation.",
-            "Are there any additional documentation files, API docs, or guides? Check for docs folders and markdown files.",
-        ],
-    },
-    # Security & Best Practices
-    {
-        "category": "Security & Best Practices",
-        "questions": [
-            "Are there any potential security vulnerabilities or hardcoded secrets? Search for API keys, passwords, or sensitive data.",
-            "Does the code follow language-specific best practices and conventions? Look at code structure and naming.",
-            "How is error handling implemented throughout the codebase? Look for try-catch blocks and error management.",
-        ],
-    },
-    # Development Workflow
-    {
-        "category": "Development Workflow",
-        "questions": [
-            "What build tools and scripts are available? Look for Makefile, package.json scripts, or setup files.",
-            "Is there a CI/CD configuration? Check for .github/workflows, .gitlab-ci.yml, or similar files.",
-            "How is the project configured for development vs production? Look for environment files and configuration.",
-        ],
-    },
-]
+# Simplified questions that map directly to report sections
+ANALYSIS_QUESTIONS = {
+    "purpose": "What is the main purpose of this project? Look at README files and main entry points.",
+    "languages": "What programming languages are used in this project? List the primary languages based on file extensions.",
+    "dependencies": "What are the key dependencies? Check package.json, requirements.txt, pyproject.toml, or similar files.",
+    "architecture": "Describe the project structure and organization. What are the main directories and their purposes?",
+    "components": "What are the main code modules or components? List the key files and their roles.",
+    "testing": "What testing setup exists? Look for test files, test directories, and testing frameworks.",
+    "documentation": "How is the project documented? Check README quality, code comments, and documentation files.",
+    "code_quality": "Are there any TODO, FIXME, or HACK comments? What do they indicate about code maturity?",
+    "security": "Are there any obvious security concerns? Look for hardcoded secrets, API keys, or unsafe patterns.",
+    "build_tools": "What build tools and scripts are available? Check for build configurations and automation.",
+    "ci_cd": "Is there CI/CD configuration? Look for workflow files and automation setup.",
+    "config": "How is the project configured? Look for environment files and configuration management.",
+}
 
 REPORT_TEMPLATE = """# Repository Analysis Report
 
@@ -71,105 +29,56 @@ REPORT_TEMPLATE = """# Repository Analysis Report
 | Attribute | Value |
 |-----------|-------|
 | **Total Files** | {total_files} |
-| **Primary Languages** | {languages} |
+| **Primary Languages** | {primary_languages} |
 | **Lines of Code** | {loc_estimate} |
-| **Key Dependencies** | {dependencies} |
 | **File Types** | {file_types} |
 
-## Executive Summary
+## Project Overview
 
-{executive_summary}
+### Purpose
+{purpose}
 
-## Detailed Analysis
+### Languages & Technologies
+{languages}
 
-### 1. Project Overview
+### Dependencies
+{dependencies}
 
-{project_overview}
+## Architecture & Structure
 
-### 2. Architecture & Design
+### Project Organization
+{architecture}
 
-{architecture_design}
+### Main Components
+{components}
 
-### 3. Code Quality
+## Code Quality & Testing
 
+### Testing Framework
+{testing}
+
+### Code Quality Notes
 {code_quality}
 
-### 4. Documentation
+## Documentation & Configuration
 
+### Documentation Quality
 {documentation}
 
-### 5. Security & Best Practices
+### Build & Development Tools
+{build_tools}
 
-{security_practices}
+### CI/CD Setup
+{ci_cd}
 
-### 6. Development Workflow
+### Configuration Management
+{config}
 
-{development_workflow}
+## Security Assessment
 
-## Assessment Summary
-
-### ✅ Strengths
-{strengths}
-
-### ⚠️ Areas for Improvement
-{improvements}
-
-### 💡 Recommendations
-{recommendations}
+{security}
 
 ---
 
 *This report was automatically generated by LLM Repo Reviewer*
 """
-
-SUMMARY_PROMPT = """Based on the comprehensive analysis above, provide a final assessment in the following format:
-
-**EXECUTIVE SUMMARY** (2-3 paragraphs):
-Write a clear, professional summary of this codebase covering its purpose, architecture, and overall quality.
-
-**STRENGTHS** (3-5 bullet points):
-List the main positive aspects of this codebase, such as:
-- Well-structured architecture
-- Comprehensive testing
-- Good documentation
-- Modern dependencies
-- Clear code organization
-
-**AREAS FOR IMPROVEMENT** (3-5 bullet points):
-List areas that could be enhanced, such as:
-- Missing documentation
-- Outdated dependencies
-- Test coverage gaps
-- Code organization issues
-- Performance concerns
-
-**RECOMMENDATIONS** (3-5 bullet points):
-Provide specific, actionable recommendations, such as:
-- Add unit tests for core modules
-- Update deprecated dependencies
-- Improve error handling in API endpoints
-- Create API documentation
-- Implement code linting
-
-Please write your response in plain markdown format - do NOT use JSON or any special formatting. Write as if you're a senior developer providing a code review.
-
-Example format:
-**EXECUTIVE SUMMARY**
-This is a well-structured Python web application built with FastAPI...
-
-**STRENGTHS**
-- Modern Python framework with type hints
-- Comprehensive test suite with 90%+ coverage
-- Clear project structure following best practices
-
-**AREAS FOR IMPROVEMENT**
-- Some modules lack docstrings
-- Dependencies could be updated
-- Error handling could be more consistent
-
-**RECOMMENDATIONS**
-- Add docstrings to all public methods
-- Update to latest versions of key dependencies
-- Implement centralized error handling middleware
-
-Now provide your assessment:"""

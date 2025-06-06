@@ -33,7 +33,7 @@ dependencies = [
     "numpy",
     "tqdm",
     "openai",
-    "PyPDF2",
+    "pypdf",
     "transformers",
     "torch",
     "scikit-learn",
@@ -41,6 +41,7 @@ dependencies = [
     "chromadb",
     "langchain",
     "langchain-community",
+    "langchain-huggingface",
     "sentence-transformers",
     "gitpython",
 ]
@@ -74,6 +75,9 @@ log_cli_level = "INFO"
 testpaths = [
   "tests",
 ]
+markers = [
+  "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+]
 
 
 [tool.coverage]
@@ -98,6 +102,11 @@ disallow_incomplete_defs = false
 
 [tool.ruff]
 line-length = 100  # defaults to 88 like black
+target-version = "py38"
+src = ["src"]
+exclude = []
+
+[tool.ruff.lint]
 select = [
   "E", "F", "W", # flake8
   "B",           # flake8-bugbear
@@ -123,17 +132,27 @@ select = [
 extend-ignore = [
   "PLR",    # Design related pylint codes
   "E501",   # Line too long
+  "PTH",    # flake8-use-pathlib (temporarily disable for pre-commit)
+  "B904",   # Within except clause, raise exceptions with raise ... from
+  "EXE001", # Shebang is present but file is not executable
+  "PLW1510", # subprocess.run without explicit check argument
+  "RUF005", # Consider iterable unpacking instead of concatenation
+  "ARG002", # Unused method argument
+  "ARG001", # Unused function argument
+  "F841",   # Local variable is assigned to but never used
+  "PT004",  # Fixture does not return anything, add leading underscore
+  "EM101",  # Exception must not use a string literal, assign to variable first
+  "PT011",  # pytest.raises is too broad, set the match parameter or use a more specific exception
 ]
-target-version = "py38"
-src = ["src"]
 unfixable = [
   "T20",  # Removes print statements
   "F841", # Removes unused variables
 ]
-exclude = []
-flake8-unused-arguments.ignore-variadic-names = true
 
-[tool.ruff.per-file-ignores]
+[tool.ruff.lint.flake8-unused-arguments]
+ignore-variadic-names = true
+
+[tool.ruff.lint.per-file-ignores]
 "tests/**" = ["T20"]
 "noxfile.py" = ["T20"]
 

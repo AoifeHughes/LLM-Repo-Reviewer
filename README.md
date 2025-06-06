@@ -5,7 +5,7 @@ An AI-powered repository analysis and code review tool that indexes codebases an
 ## Features
 
 - 🚀 **ChromaDB Vector Storage**: Fast and scalable semantic search
-- 🔧 **Tool Calling**: AI can use `find` and `grep` commands for precise searches  
+- 🔧 **Tool Calling**: AI can use `find` and `grep` commands for precise searches
 - 📊 **Auto-Analysis**: Comprehensive automated repository analysis with reports
 - 🐙 **GitHub Integration**: Clone and analyze repositories directly from GitHub URLs
 - 💾 **Smart Caching**: Only reprocess changed files
@@ -196,7 +196,7 @@ llm-repo-reviewer --auto-analyze https://github.com/fastapi/fastapi
 # 2. Indexes the entire codebase with smart caching
 # 3. Runs 18+ analysis questions across 6 categories:
 #    - Project Overview
-#    - Architecture & Design  
+#    - Architecture & Design
 #    - Code Quality
 #    - Documentation
 #    - Security & Best Practices
