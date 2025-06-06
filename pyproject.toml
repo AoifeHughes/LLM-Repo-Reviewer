@@ -134,4 +134,4 @@ flake8-unused-arguments.ignore-variadic-names = true
 "noxfile.py" = ["T20"]
 
 [project.scripts]
-llmlibrarian = "llmlibrarian.__main__:main"
+llmlibrarian = "LLMLibrarian.__main__:main"

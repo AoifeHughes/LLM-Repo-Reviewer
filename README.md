@@ -115,7 +115,7 @@ mypy src/
 ## Examples
 
 See the `examples/` directory:
-- `enhanced_demo.ipynb`: Jupyter notebook demonstrating features
+- `demo.ipynb`: Jupyter notebook demonstrating features
 - `turing_way.ipynb`: Original demo notebook
 
 ## License
