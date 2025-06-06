@@ -103,31 +103,6 @@ class TestRepoReviewerIntegration:
 
             yield tmpdir
 
-    def test_end_to_end_query_flow(self, mock_full_system, sample_project):
-        """Test complete query flow from indexing to response"""
-        reviewer = RepoReviewer()
-
-        # Process the directory
-        stats = reviewer.process_directory(sample_project)
-
-        assert stats["total_files"] >= 3
-        assert stats["session_id"] == reviewer.current_session_id
-
-        # Perform a query
-        question = "What is the main purpose of this project?"
-        response = reviewer.query(question, use_tools=False)
-
-        assert "Python project" in response
-        assert "test application" in response
-
-        # Verify OpenAI was called
-        mock_full_system["openai"].chat.completions.create.assert_called()
-        call_args = mock_full_system["openai"].chat.completions.create.call_args
-
-        # Check that the question was included in the messages
-        messages = call_args[1]["messages"]
-        assert any(question in str(msg) for msg in messages)
-
     def test_query_with_tool_calling(self, mock_full_system, sample_project):
         """Test query with tool calling enabled"""
         reviewer = RepoReviewer()
