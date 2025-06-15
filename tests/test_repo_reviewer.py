@@ -1,5 +1,5 @@
 """
-Legacy tests for RepoReviewer - kept for backwards compatibility
+Legacy tests for RepoHealthAnalyzer - kept for backwards compatibility
 Most functionality is now tested in test_repo_reviewer_core.py and test_integration.py
 """
 
@@ -9,7 +9,7 @@ from unittest.mock import MagicMock, Mock, patch
 
 import pytest
 
-from LLMRepoReviewer.repo_reviewer import RepoReviewer
+from LLMRepoReviewer.repo_reviewer import RepoHealthAnalyzer
 
 
 @pytest.fixture()
@@ -80,14 +80,14 @@ def mock_embeddings():
         yield mock_embeddings
 
 
-class TestRepoReviewer:
-    """Test cases for RepoReviewer"""
+class TestRepoHealthAnalyzer:
+    """Test cases for RepoHealthAnalyzer"""
 
     @pytest.mark.usefixtures("mock_chromadb", "mock_embeddings")
     def test_initialization(self):
         """Test repo reviewer initialization"""
         with patch("LLMRepoReviewer.repo_reviewer.OpenAI"):
-            reviewer = RepoReviewer()
+            reviewer = RepoHealthAnalyzer()
 
             assert reviewer.current_session_id is not None
             assert reviewer.current_session_id.startswith("session_")
@@ -99,7 +99,7 @@ class TestRepoReviewer:
     def test_file_hash_calculation(self, temp_directory):
         """Test file hash calculation"""
         with patch("LLMRepoReviewer.repo_reviewer.OpenAI"):
-            reviewer = RepoReviewer()
+            reviewer = RepoHealthAnalyzer()
 
             test_file = os.path.join(temp_directory, "test.py")
             hash1 = reviewer._get_file_hash(test_file)
@@ -113,7 +113,7 @@ class TestRepoReviewer:
     def test_text_extraction(self, temp_directory):
         """Test text extraction from files"""
         with patch("LLMRepoReviewer.repo_reviewer.OpenAI"):
-            reviewer = RepoReviewer()
+            reviewer = RepoHealthAnalyzer()
 
             # Test Python file
             py_file = os.path.join(temp_directory, "test.py")
@@ -129,7 +129,7 @@ class TestRepoReviewer:
     def test_process_directory(self, temp_directory):
         """Test directory processing"""
         with patch("LLMRepoReviewer.repo_reviewer.OpenAI"):
-            reviewer = RepoReviewer()
+            reviewer = RepoHealthAnalyzer()
 
             stats = reviewer.process_directory(temp_directory)
 
@@ -142,7 +142,7 @@ class TestRepoReviewer:
     def test_file_caching(self, temp_directory):
         """Test file caching mechanism"""
         with patch("LLMRepoReviewer.repo_reviewer.OpenAI"):
-            reviewer = RepoReviewer()
+            reviewer = RepoHealthAnalyzer()
 
             test_file = os.path.join(temp_directory, "test.py")
 
@@ -167,7 +167,7 @@ class TestRepoReviewer:
     def test_query_without_tools(self, mock_openai_client):
         """Test querying without tool usage"""
         with patch("LLMRepoReviewer.repo_reviewer.OpenAI", return_value=mock_openai_client):
-            reviewer = RepoReviewer()
+            reviewer = RepoHealthAnalyzer()
 
             response = reviewer.query("What is the purpose of this code?", use_tools=False)
 
@@ -178,7 +178,7 @@ class TestRepoReviewer:
     def test_tool_definitions(self):
         """Test tool definitions are properly structured"""
         with patch("LLMRepoReviewer.repo_reviewer.OpenAI"):
-            reviewer = RepoReviewer()
+            reviewer = RepoHealthAnalyzer()
 
             tools = reviewer.tool_registry.get_openai_functions()
             tool_names = [tool["function"]["name"] for tool in tools]
@@ -197,7 +197,7 @@ class TestRepoReviewer:
     def test_find_files_tool(self, temp_directory):
         """Test find_files tool execution"""
         with patch("LLMRepoReviewer.repo_reviewer.OpenAI"):
-            reviewer = RepoReviewer()
+            reviewer = RepoHealthAnalyzer()
 
             with patch("subprocess.run") as mock_run:
                 mock_run.return_value.returncode = 0
@@ -214,7 +214,7 @@ class TestRepoReviewer:
     def test_grep_content_tool(self, temp_directory):
         """Test grep_content tool execution"""
         with patch("LLMRepoReviewer.repo_reviewer.OpenAI"):
-            reviewer = RepoReviewer()
+            reviewer = RepoHealthAnalyzer()
 
             with patch("subprocess.run") as mock_run:
                 mock_run.return_value.returncode = 0
@@ -231,7 +231,7 @@ class TestRepoReviewer:
     def test_get_file_info_tool(self, temp_directory):
         """Test get_file_info tool execution"""
         with patch("LLMRepoReviewer.repo_reviewer.OpenAI"):
-            reviewer = RepoReviewer()
+            reviewer = RepoHealthAnalyzer()
 
             test_file = os.path.join(temp_directory, "test.py")
             result = reviewer.tool_registry.execute_tool("get_file_info", {"file_path": test_file})
@@ -245,7 +245,7 @@ class TestRepoReviewer:
     def test_session_history(self):
         """Test session history tracking"""
         with patch("LLMRepoReviewer.repo_reviewer.OpenAI"):
-            reviewer = RepoReviewer()
+            reviewer = RepoHealthAnalyzer()
 
             # Log some entries
             reviewer._log_to_session({"type": "test", "content": "Test entry"})
@@ -266,7 +266,7 @@ class TestRepoReviewer:
     def test_error_handling(self):
         """Test error handling in various scenarios"""
         with patch("LLMRepoReviewer.repo_reviewer.OpenAI"):
-            reviewer = RepoReviewer()
+            reviewer = RepoHealthAnalyzer()
 
             # Test with non-existent directory
             with pytest.raises(ValueError, match="Directory not found"):

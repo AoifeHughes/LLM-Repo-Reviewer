@@ -10,7 +10,7 @@ import pytest
 import requests
 from requests.exceptions import ConnectionError, Timeout
 
-from LLMRepoReviewer.repo_reviewer import RepoReviewer
+from LLMRepoReviewer.repo_reviewer import RepoHealthAnalyzer
 
 
 def check_llm_available(api_base="http://localhost:11434/v1"):
@@ -34,8 +34,10 @@ class TestWithRealLLM:
 
     @pytest.fixture()
     def reviewer(self):
-        """Create a RepoReviewer instance for real LLM testing"""
-        return RepoReviewer(api_base_url="http://localhost:11434/v1", api_key="fake-key-for-local")
+        """Create a RepoHealthAnalyzer instance for real LLM testing"""
+        return RepoHealthAnalyzer(
+            api_base_url="http://localhost:11434/v1", api_key="fake-key-for-local"
+        )
 
     @pytest.fixture()
     def test_project(self):
@@ -237,7 +239,7 @@ class TestLLMPerformance:
 
     @pytest.fixture()
     def reviewer(self):
-        return RepoReviewer(api_base_url="http://localhost:11434/v1")
+        return RepoHealthAnalyzer(api_base_url="http://localhost:11434/v1")
 
     @pytest.mark.slow()
     def test_large_project_analysis(self, reviewer):
@@ -313,17 +315,17 @@ class TestLLMConfiguration:
         """Test different API endpoint configurations"""
         # Test local Ollama
         if check_llm_available("http://localhost:11434/v1"):
-            reviewer = RepoReviewer(api_base_url="http://localhost:11434/v1")
+            reviewer = RepoHealthAnalyzer(api_base_url="http://localhost:11434/v1")
             assert str(reviewer.client.base_url).rstrip("/") == "http://localhost:11434/v1"
 
         # Test different port
         if check_llm_available("http://localhost:8080/v1"):
-            reviewer = RepoReviewer(api_base_url="http://localhost:8080/v1")
+            reviewer = RepoHealthAnalyzer(api_base_url="http://localhost:8080/v1")
             assert str(reviewer.client.base_url).rstrip("/") == "http://localhost:8080/v1"
 
     def test_model_parameters(self):
         """Test different model parameters"""
-        reviewer = RepoReviewer(
+        reviewer = RepoHealthAnalyzer(
             chunk_size=500, chunk_overlap=100, embedding_model_name="all-MiniLM-L6-v2"
         )
 

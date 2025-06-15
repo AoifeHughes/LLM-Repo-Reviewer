@@ -18,15 +18,20 @@ from langchain_huggingface import HuggingFaceEmbeddings
 from openai import OpenAI
 from tqdm import tqdm
 
-from .analysis_template import ANALYSIS_QUESTIONS, REPORT_TEMPLATE
+from .analysis_template import REPORT_TEMPLATE
+from .health_assessment import HEALTH_ANALYSIS_QUESTIONS, HealthAssessment
+from .quality_scorer import HealthScores, QualityScorer
+from .repo_editor import RepoEditor
+from .repo_indexer import RepoIndexer
+from .template_manager import TemplateManager
 from .tools import default_registry as tool_registry
 
 # Suppress tokenizers parallelism warning
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
 
-class RepoReviewer:
-    """AI-powered repository analysis and code review tool using ChromaDB for vector storage and OpenAI API for interactions"""
+class RepoHealthAnalyzer:
+    """AI-powered repository health analysis and quality assessment tool using ChromaDB for vector storage and OpenAI API for interactions"""
 
     def __init__(
         self,
@@ -60,6 +65,13 @@ class RepoReviewer:
         # Session management
         self.current_session_id = None
         self._start_new_session()
+
+        # Initialize health analysis components
+        self.repo_indexer = RepoIndexer()
+        self.quality_scorer = QualityScorer()
+        self.repo_editor = RepoEditor()
+        self.template_manager = TemplateManager()
+        self.health_assessment = HealthAssessment()
 
         # Tool registry
         self.tool_registry = tool_registry
@@ -616,6 +628,241 @@ class RepoReviewer:
         except Exception:
             return []
 
+    def analyze_repository_health(
+        self,
+        directory_path: str,
+        output_file: str = "health_report.md",
+        include_llm_analysis: bool = True,
+        generate_missing_files: bool = False,
+        context_overrides: Optional[Dict[str, str]] = None,
+    ) -> Dict[str, Any]:
+        """
+        Perform comprehensive repository health analysis.
+
+        Args:
+            directory_path: Path to repository to analyze
+            output_file: Output file for health report
+            include_llm_analysis: Whether to include detailed LLM analysis
+            generate_missing_files: Whether to generate missing standard files
+            context_overrides: Additional context for file generation
+
+        Returns:
+            Dictionary with health analysis results
+        """
+        print("\n🏥 Starting repository health analysis...")
+
+        # Ensure directory is indexed for RAG functionality
+        self.process_directory(directory_path)
+
+        # Step 1: Comprehensive repository indexing
+        print("📊 Indexing repository metadata...")
+        repo_metadata = self.repo_indexer.index_repository(directory_path)
+
+        # Step 2: Calculate health scores
+        print("⚕️ Calculating health scores...")
+        health_scores = self.quality_scorer.calculate_health_scores(repo_metadata)
+
+        # Step 3: Generate findings and recommendations
+        print("🔍 Generating findings and recommendations...")
+        findings = self.quality_scorer.generate_findings(repo_metadata, health_scores)
+        recommendations = self.quality_scorer.generate_recommendations(
+            repo_metadata, health_scores, findings
+        )
+
+        # Step 4: Optional LLM-based detailed analysis
+        llm_analysis = {}
+        if include_llm_analysis:
+            print("🤖 Performing detailed LLM analysis...")
+            llm_analysis = self._perform_llm_health_analysis()
+
+        # Step 5: Generate missing files if requested
+        missing_files_results = []
+        if generate_missing_files:
+            print("📝 Generating missing repository files...")
+            context = context_overrides or {}
+            missing_files_results = self.repo_editor.generate_missing_files(
+                directory_path, repo_metadata, context, dry_run=False
+            )
+
+        # Step 6: Generate comprehensive health report
+        print("📋 Generating health report...")
+        report_content = self.health_assessment.generate_health_report(
+            repo_metadata=repo_metadata,
+            health_scores=health_scores,
+            findings=findings,
+            recommendations=recommendations,
+            llm_analysis=llm_analysis,
+        )
+
+        # Write report to file
+        with open(output_file, "w", encoding="utf-8") as f:
+            f.write(report_content)
+
+        # Prepare results
+        results = {
+            "health_scores": health_scores.to_dict(),
+            "findings": findings.to_dict(),
+            "recommendations": recommendations,
+            "repo_metadata": repo_metadata,
+            "llm_analysis": llm_analysis,
+            "missing_files_generated": missing_files_results,
+            "report_file": output_file,
+            "overall_grade": self._calculate_health_grade(health_scores.overall),
+        }
+
+        print(f"✅ Health analysis complete! Overall score: {health_scores.overall}/100")
+        print(f"📄 Report saved to: {output_file}")
+
+        return results
+
+    def _perform_llm_health_analysis(self) -> Dict[str, str]:
+        """Perform detailed LLM analysis for each health category."""
+        analysis_results = {}
+        total_questions = len(HEALTH_ANALYSIS_QUESTIONS)
+
+        with tqdm(total=total_questions, desc="LLM Analysis") as pbar:
+            for category, question in HEALTH_ANALYSIS_QUESTIONS.items():
+                pbar.set_description(f"Analyzing: {category}")
+                try:
+                    answer = self.query(question, use_tools=True, max_context_chunks=20)
+                    analysis_results[category] = answer
+                except Exception as e:
+                    analysis_results[category] = f"Error during analysis: {e!s}"
+                pbar.update(1)
+
+        return analysis_results
+
+    def _calculate_health_grade(self, score: int) -> str:
+        """Calculate letter grade from numeric score."""
+        if score >= 90:
+            return "A+"
+        if score >= 85:
+            return "A"
+        if score >= 80:
+            return "A-"
+        if score >= 75:
+            return "B+"
+        if score >= 70:
+            return "B"
+        if score >= 65:
+            return "B-"
+        if score >= 60:
+            return "C+"
+        if score >= 55:
+            return "C"
+        if score >= 50:
+            return "C-"
+        if score >= 40:
+            return "D"
+        return "F"
+
+    def suggest_improvements(
+        self, directory_path: str, focus_areas: Optional[List[str]] = None
+    ) -> Dict[str, Any]:
+        """
+        Suggest specific improvements for repository health.
+
+        Args:
+            directory_path: Path to repository
+            focus_areas: Optional list of areas to focus on (documentation, security, etc.)
+
+        Returns:
+            Dictionary with improvement suggestions
+        """
+        # Get repository metadata and health scores
+        repo_metadata = self.repo_indexer.index_repository(directory_path)
+        health_scores = self.quality_scorer.calculate_health_scores(repo_metadata)
+
+        # Get file improvement suggestions
+        file_improvements = self.repo_editor.suggest_file_improvements(
+            directory_path, repo_metadata, health_scores
+        )
+
+        # Filter by focus areas if specified
+        if focus_areas:
+            file_improvements = [
+                imp for imp in file_improvements if imp.get("category") in focus_areas
+            ]
+
+        # Get missing files
+        missing_files = self.template_manager.get_missing_files(directory_path, repo_metadata)
+
+        return {
+            "health_scores": health_scores.to_dict(),
+            "file_improvements": file_improvements,
+            "missing_files": missing_files,
+            "priority_actions": self._get_priority_actions(
+                health_scores, file_improvements, missing_files
+            ),
+        }
+
+    def _get_priority_actions(
+        self,
+        health_scores: HealthScores,
+        file_improvements: List[Dict[str, Any]],
+        missing_files: List[str],
+    ) -> List[str]:
+        """Get prioritized list of actions to take."""
+        actions = []
+
+        # Critical actions based on scores
+        if health_scores.security < 50:
+            actions.append("🚨 CRITICAL: Address security vulnerabilities immediately")
+
+        if health_scores.overall < 40:
+            actions.append("🚨 CRITICAL: Repository health is severely compromised")
+
+        # High priority actions
+        if "README.md" in missing_files:
+            actions.append("🔴 HIGH: Create README.md file")
+
+        if "SECURITY.md" in missing_files and health_scores.security < 70:
+            actions.append("🔴 HIGH: Add security policy (SECURITY.md)")
+
+        if health_scores.testing < 50:
+            actions.append("🔴 HIGH: Improve test coverage")
+
+        # Medium priority actions
+        critical_improvements = [imp for imp in file_improvements if imp.get("priority") == "high"]
+        for imp in critical_improvements[:3]:  # Top 3
+            actions.append(f"🟡 MEDIUM: {imp.get('title', 'Unknown improvement')}")
+
+        return actions[:10]  # Limit to top 10 actions
+
+    def generate_missing_files(
+        self,
+        directory_path: str,
+        file_types: Optional[List[str]] = None,
+        context_overrides: Optional[Dict[str, str]] = None,
+        dry_run: bool = False,
+    ) -> List[Dict[str, str]]:
+        """
+        Generate missing repository files.
+
+        Args:
+            directory_path: Path to repository
+            file_types: Optional list of specific file types to generate
+            context_overrides: Additional context for template generation
+            dry_run: If True, don't actually create files
+
+        Returns:
+            List of generated files with their status
+        """
+        repo_metadata = self.repo_indexer.index_repository(directory_path)
+
+        # Get missing files
+        missing_files = self.template_manager.get_missing_files(directory_path, repo_metadata)
+
+        # Filter by file types if specified
+        if file_types:
+            missing_files = [f for f in missing_files if any(ft in f for ft in file_types)]
+
+        # Generate files
+        context = context_overrides or {}
+        return self.repo_editor.generate_missing_files(
+            directory_path, repo_metadata, context, dry_run
+        )
+
     def auto_analyze(self, directory_path: str, output_file: str = "analysis_report.md") -> str:
         """Perform comprehensive codebase analysis and generate a report"""
         print("\n🔍 Starting automated codebase analysis...")
@@ -628,10 +875,10 @@ class RepoReviewer:
 
         # Run analysis questions
         analysis_results = {}
-        total_questions = len(ANALYSIS_QUESTIONS)
+        total_questions = len(HEALTH_ANALYSIS_QUESTIONS)
 
         with tqdm(total=total_questions, desc="Analyzing codebase") as pbar:
-            for key, question in ANALYSIS_QUESTIONS.items():
+            for key, question in HEALTH_ANALYSIS_QUESTIONS.items():
                 pbar.set_description(f"Analyzing: {key}")
                 try:
                     answer = self.query(question, use_tools=True)
