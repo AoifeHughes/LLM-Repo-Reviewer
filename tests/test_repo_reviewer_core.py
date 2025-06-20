@@ -1,5 +1,5 @@
 """
-Unit tests for RepoReviewer core functionality (without LLM)
+Unit tests for RepoHealthAnalyzer core functionality (without LLM)
 """
 
 import json
@@ -10,12 +10,12 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from LLMRepoReviewer.repo_reviewer import RepoReviewer
+from LLMRepoReviewer.repo_reviewer import RepoHealthAnalyzer
 from LLMRepoReviewer.tools.base import BaseTool
 
 
-class TestRepoReviewerCore:
-    """Test RepoReviewer core functionality without LLM dependencies"""
+class TestRepoHealthAnalyzerCore:
+    """Test RepoHealthAnalyzer core functionality without LLM dependencies"""
 
     @pytest.fixture()
     def mock_dependencies(self):
@@ -74,8 +74,8 @@ class TestRepoReviewerCore:
             yield tmpdir
 
     def test_initialization(self, mock_dependencies):
-        """Test RepoReviewer initialization"""
-        reviewer = RepoReviewer()
+        """Test RepoHealthAnalyzer initialization"""
+        reviewer = RepoHealthAnalyzer()
 
         assert reviewer.current_session_id is not None
         assert reviewer.current_session_id.startswith("session_")
@@ -84,7 +84,7 @@ class TestRepoReviewerCore:
 
     def test_tool_management(self, mock_dependencies):
         """Test tool registration and management"""
-        reviewer = RepoReviewer()
+        reviewer = RepoHealthAnalyzer()
 
         # Test initial tools
         initial_tools = reviewer.list_tools()
@@ -125,7 +125,7 @@ class TestRepoReviewerCore:
 
     def test_file_hash_calculation(self, mock_dependencies, temp_directory):
         """Test file hash calculation"""
-        reviewer = RepoReviewer()
+        reviewer = RepoHealthAnalyzer()
 
         test_file = os.path.join(temp_directory, "test.py")
 
@@ -140,14 +140,14 @@ class TestRepoReviewerCore:
 
     def test_file_hash_nonexistent_file(self, mock_dependencies):
         """Test file hash calculation for nonexistent file"""
-        reviewer = RepoReviewer()
+        reviewer = RepoHealthAnalyzer()
 
         hash_result = reviewer._get_file_hash("/nonexistent/file.txt")
         assert hash_result is None
 
     def test_text_extraction(self, mock_dependencies, temp_directory):
         """Test text extraction from various file types"""
-        reviewer = RepoReviewer()
+        reviewer = RepoHealthAnalyzer()
 
         # Test Python file
         py_file = os.path.join(temp_directory, "test.py")
@@ -177,7 +177,7 @@ class TestRepoReviewerCore:
 
     def test_file_matches_pattern(self, mock_dependencies, temp_directory):
         """Test file pattern matching"""
-        reviewer = RepoReviewer()
+        reviewer = RepoHealthAnalyzer()
 
         test_file = os.path.join(temp_directory, "test.py")
 
@@ -200,7 +200,7 @@ class TestRepoReviewerCore:
     @patch("LLMRepoReviewer.repo_reviewer.git.Repo")
     def test_get_git_tracked_files_success(self, mock_git_repo, mock_dependencies, temp_directory):
         """Test getting git-tracked files successfully"""
-        reviewer = RepoReviewer()
+        reviewer = RepoHealthAnalyzer()
 
         # Mock git repository
         mock_repo = MagicMock()
@@ -219,7 +219,7 @@ class TestRepoReviewerCore:
         self, mock_git_repo, mock_dependencies, temp_directory
     ):
         """Test fallback when directory is not a git repository"""
-        reviewer = RepoReviewer()
+        reviewer = RepoHealthAnalyzer()
 
         # Mock git repository initialization failure - use the correct exception type
         import git
@@ -235,7 +235,7 @@ class TestRepoReviewerCore:
 
     def test_gather_project_stats(self, mock_dependencies, temp_directory):
         """Test project statistics gathering"""
-        reviewer = RepoReviewer()
+        reviewer = RepoHealthAnalyzer()
 
         with patch.object(reviewer, "_get_git_tracked_files") as mock_git_files:
             # Mock git tracked files
@@ -257,7 +257,7 @@ class TestRepoReviewerCore:
 
     def test_gather_project_stats_with_dependencies(self, mock_dependencies, temp_directory):
         """Test project statistics gathering with dependency files"""
-        reviewer = RepoReviewer()
+        reviewer = RepoHealthAnalyzer()
 
         # Create dependency files
         with open(os.path.join(temp_directory, "requirements.txt"), "w") as f:
@@ -279,7 +279,7 @@ class TestRepoReviewerCore:
 
     def test_create_report(self, mock_dependencies):
         """Test report creation"""
-        reviewer = RepoReviewer()
+        reviewer = RepoHealthAnalyzer()
 
         # Mock data
         directory_path = "/test/path"
@@ -317,7 +317,7 @@ class TestRepoReviewerCore:
 
     def test_session_management(self, mock_dependencies):
         """Test session management functionality"""
-        reviewer = RepoReviewer()
+        reviewer = RepoHealthAnalyzer()
 
         # Test session creation
         original_session = reviewer.current_session_id
@@ -341,7 +341,7 @@ class TestRepoReviewerCore:
 
     def test_cache_operations(self, mock_dependencies, temp_directory):
         """Test file caching operations"""
-        reviewer = RepoReviewer()
+        reviewer = RepoHealthAnalyzer()
 
         test_file = os.path.join(temp_directory, "test.py")
         file_hash = reviewer._get_file_hash(test_file)
@@ -369,8 +369,8 @@ class TestRepoReviewerCore:
             assert is_cached is False
 
 
-class TestRepoReviewerErrorHandling:
-    """Test error handling in RepoReviewer"""
+class TestRepoHealthAnalyzerErrorHandling:
+    """Test error handling in RepoHealthAnalyzer"""
 
     @pytest.fixture()
     def mock_dependencies(self):
@@ -391,14 +391,14 @@ class TestRepoReviewerErrorHandling:
 
     def test_process_directory_not_found(self, mock_dependencies):
         """Test processing non-existent directory"""
-        reviewer = RepoReviewer()
+        reviewer = RepoHealthAnalyzer()
 
         with pytest.raises(ValueError, match="Directory not found"):
             reviewer.process_directory("/nonexistent/directory")
 
     def test_extract_text_with_encoding_errors(self, mock_dependencies):
         """Test text extraction with encoding errors"""
-        reviewer = RepoReviewer()
+        reviewer = RepoHealthAnalyzer()
 
         # Create a file with binary content
         with tempfile.NamedTemporaryFile(mode="wb", delete=False, suffix=".py") as f:
@@ -414,7 +414,7 @@ class TestRepoReviewerErrorHandling:
 
     def test_tool_execution_error_handling(self, mock_dependencies):
         """Test tool execution error handling"""
-        reviewer = RepoReviewer()
+        reviewer = RepoHealthAnalyzer()
 
         # Test unknown tool
         result = reviewer._execute_tool("unknown_tool", {})

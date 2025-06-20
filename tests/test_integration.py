@@ -1,5 +1,5 @@
 """
-Integration tests for RepoReviewer with mocked LLM
+Integration tests for RepoHealthAnalyzer with mocked LLM
 """
 
 import os
@@ -8,10 +8,10 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from LLMRepoReviewer.repo_reviewer import RepoReviewer
+from LLMRepoReviewer.repo_reviewer import RepoHealthAnalyzer
 
 
-class TestRepoReviewerIntegration:
+class TestRepoHealthAnalyzerIntegration:
     """Integration tests with mocked LLM responses"""
 
     @pytest.fixture()
@@ -105,7 +105,7 @@ class TestRepoReviewerIntegration:
 
     def test_query_with_tool_calling(self, mock_full_system, sample_project):
         """Test query with tool calling enabled"""
-        reviewer = RepoReviewer()
+        reviewer = RepoHealthAnalyzer()
 
         # Mock tool call response
         mock_tool_call = MagicMock()
@@ -153,7 +153,7 @@ class TestRepoReviewerIntegration:
 
     def test_auto_analyze_workflow(self, mock_full_system, sample_project):
         """Test the complete auto-analyze workflow"""
-        reviewer = RepoReviewer()
+        reviewer = RepoHealthAnalyzer()
 
         # Mock responses for different analysis questions
         mock_responses = [
@@ -207,7 +207,7 @@ class TestRepoReviewerIntegration:
 
     def test_github_repo_analysis_workflow(self, mock_full_system):
         """Test GitHub repository cloning and analysis workflow"""
-        reviewer = RepoReviewer()
+        reviewer = RepoHealthAnalyzer()
 
         # Mock git clone
         with patch.object(reviewer, "clone_github_repo") as mock_clone, patch.object(
@@ -226,7 +226,7 @@ class TestRepoReviewerIntegration:
 
     def test_error_handling_during_analysis(self, mock_full_system, sample_project):
         """Test error handling during analysis process"""
-        reviewer = RepoReviewer()
+        reviewer = RepoHealthAnalyzer()
 
         # Mock OpenAI to raise an exception
         mock_full_system["openai"].chat.completions.create.side_effect = Exception("API Error")
@@ -255,7 +255,7 @@ class TestRepoReviewerIntegration:
 
     def test_session_history_integration(self, mock_full_system, sample_project):
         """Test session history tracking during queries"""
-        reviewer = RepoReviewer()
+        reviewer = RepoHealthAnalyzer()
 
         # Mock session collection query
         mock_full_system["collection"].query.return_value = {
@@ -287,7 +287,7 @@ class TestRepoReviewerIntegration:
 
     def test_caching_workflow_integration(self, mock_full_system, sample_project):
         """Test file caching during processing workflow"""
-        reviewer = RepoReviewer()
+        reviewer = RepoHealthAnalyzer()
 
         # First processing - should process all files
         stats1 = reviewer.process_directory(sample_project)
@@ -330,10 +330,10 @@ class TestCommandLineIntegration:
     def test_cli_version_info(self, mock_system):
         """Test that CLI can import and initialize without errors"""
         # This tests that all imports work correctly
-        from LLMRepoReviewer.repo_reviewer import RepoReviewer
+        from LLMRepoReviewer.repo_reviewer import RepoHealthAnalyzer
 
         # Should be able to create instance without errors
-        reviewer = RepoReviewer()
+        reviewer = RepoHealthAnalyzer()
         assert reviewer is not None
         assert len(reviewer.list_tools()) >= 3
 

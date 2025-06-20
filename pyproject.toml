@@ -44,6 +44,9 @@ dependencies = [
     "langchain-huggingface",
     "sentence-transformers",
     "gitpython",
+    "jinja2",
+    "pyyaml",
+    "requests",
 ]
 
 [project.urls]
