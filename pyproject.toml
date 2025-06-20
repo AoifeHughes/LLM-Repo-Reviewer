@@ -46,6 +46,7 @@ dependencies = [
     "gitpython",
     "jinja2",
     "pyyaml",
+    "requests",
 ]
 
 [project.urls]

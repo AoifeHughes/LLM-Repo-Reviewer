@@ -19,6 +19,7 @@ from openai import OpenAI
 from tqdm import tqdm
 
 from .analysis_template import REPORT_TEMPLATE
+from .github_client import GitHubAPIClient
 from .health_assessment import HEALTH_ANALYSIS_QUESTIONS, HealthAssessment
 from .quality_scorer import HealthScores, QualityScorer
 from .repo_editor import RepoEditor
@@ -634,6 +635,8 @@ class RepoHealthAnalyzer:
         output_file: str = "health_report.md",
         include_llm_analysis: bool = True,
         generate_missing_files: bool = False,
+        include_github_analysis: bool = False,
+        github_url: Optional[str] = None,
         context_overrides: Optional[Dict[str, str]] = None,
     ) -> Dict[str, Any]:
         """
@@ -644,6 +647,8 @@ class RepoHealthAnalyzer:
             output_file: Output file for health report
             include_llm_analysis: Whether to include detailed LLM analysis
             generate_missing_files: Whether to generate missing standard files
+            include_github_analysis: Whether to include GitHub API analysis
+            github_url: GitHub repository URL (for GitHub analysis)
             context_overrides: Additional context for file generation
 
         Returns:
@@ -658,9 +663,9 @@ class RepoHealthAnalyzer:
         print("📊 Indexing repository metadata...")
         repo_metadata = self.repo_indexer.index_repository(directory_path)
 
-        # Step 2: Calculate health scores
+        # Step 2: Calculate health scores with dynamic weights
         print("⚕️ Calculating health scores...")
-        health_scores = self.quality_scorer.calculate_health_scores(repo_metadata)
+        health_scores = self.quality_scorer.calculate_health_scores(repo_metadata, directory_path)
 
         # Step 3: Generate findings and recommendations
         print("🔍 Generating findings and recommendations...")
@@ -674,6 +679,17 @@ class RepoHealthAnalyzer:
         if include_llm_analysis:
             print("🤖 Performing detailed LLM analysis...")
             llm_analysis = self._perform_llm_health_analysis()
+
+        # Step 4.5: Optional GitHub API analysis
+        github_analysis = {}
+        if include_github_analysis and github_url:
+            print("📡 Performing GitHub API analysis...")
+            try:
+                github_client = GitHubAPIClient()
+                github_analysis = github_client.analyze_repository(github_url)
+            except Exception as e:
+                print(f"⚠️ GitHub analysis failed: {e}")
+                github_analysis = {"error": str(e)}
 
         # Step 5: Generate missing files if requested
         missing_files_results = []
@@ -705,6 +721,7 @@ class RepoHealthAnalyzer:
             "recommendations": recommendations,
             "repo_metadata": repo_metadata,
             "llm_analysis": llm_analysis,
+            "github_analysis": github_analysis,
             "missing_files_generated": missing_files_results,
             "report_file": output_file,
             "overall_grade": self._calculate_health_grade(health_scores.overall),
@@ -724,7 +741,7 @@ class RepoHealthAnalyzer:
             for category, question in HEALTH_ANALYSIS_QUESTIONS.items():
                 pbar.set_description(f"Analyzing: {category}")
                 try:
-                    answer = self.query(question, use_tools=True, max_context_chunks=20)
+                    answer = self.query(question, use_tools=True, max_chunks=20)
                     analysis_results[category] = answer
                 except Exception as e:
                     analysis_results[category] = f"Error during analysis: {e!s}"
@@ -771,7 +788,7 @@ class RepoHealthAnalyzer:
         """
         # Get repository metadata and health scores
         repo_metadata = self.repo_indexer.index_repository(directory_path)
-        health_scores = self.quality_scorer.calculate_health_scores(repo_metadata)
+        health_scores = self.quality_scorer.calculate_health_scores(repo_metadata, directory_path)
 
         # Get file improvement suggestions
         file_improvements = self.repo_editor.suggest_file_improvements(

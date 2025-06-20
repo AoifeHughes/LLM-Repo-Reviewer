@@ -9,6 +9,7 @@ import json
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Tuple
 
+from .repo_classifier import RepositoryClassifier, RepositoryType
 from .repo_indexer import RepoIndexer
 
 
@@ -23,10 +24,13 @@ class HealthScores:
     community: int
     legal: int
     ci_cd: int
+    repository_type: Optional[str] = None
+    type_confidence: Optional[float] = None
+    weights_used: Optional[Dict[str, float]] = None
 
-    def to_dict(self) -> Dict[str, int]:
+    def to_dict(self) -> Dict[str, any]:
         """Convert to dictionary format."""
-        return {
+        result = {
             "overall": self.overall,
             "documentation": self.documentation,
             "testing": self.testing,
@@ -35,6 +39,15 @@ class HealthScores:
             "legal": self.legal,
             "ci_cd": self.ci_cd,
         }
+
+        if self.repository_type:
+            result["repository_type"] = self.repository_type
+        if self.type_confidence:
+            result["type_confidence"] = self.type_confidence
+        if self.weights_used:
+            result["weights_used"] = self.weights_used
+
+        return result
 
 
 @dataclass
@@ -69,15 +82,18 @@ class QualityScorer:
     - CI/CD Maturity (10%)
     """
 
-    def __init__(self, config_path: Optional[str] = None):
+    def __init__(self, config_path: Optional[str] = None, enable_dynamic_weights: bool = True):
         """
         Initialize the quality scorer with optional custom configuration.
 
         Args:
             config_path: Path to custom configuration file
+            enable_dynamic_weights: Whether to use dynamic weights based on repository type
         """
         self.config = self._load_config(config_path)
         self.indexer = RepoIndexer()
+        self.classifier = RepositoryClassifier() if enable_dynamic_weights else None
+        self.enable_dynamic_weights = enable_dynamic_weights
 
     def _load_config(self, config_path: Optional[str]) -> Dict[str, Any]:
         """Load scoring configuration."""
@@ -142,15 +158,18 @@ class QualityScorer:
             else:
                 base[key] = value
 
-    def calculate_health_scores(self, repo_metadata: Dict[str, Any]) -> HealthScores:
+    def calculate_health_scores(
+        self, repo_metadata: Dict[str, Any], repo_path: Optional[str] = None
+    ) -> HealthScores:
         """
         Calculate comprehensive health scores for a repository.
 
         Args:
             repo_metadata: Repository metadata from RepoIndexer
+            repo_path: Optional path to repository for classification
 
         Returns:
-            HealthScores object with all category scores
+            HealthScores object with all category scores and classification info
         """
         scores = {
             "documentation": self._score_documentation(repo_metadata),
@@ -161,12 +180,37 @@ class QualityScorer:
             "ci_cd": self._score_ci_cd_maturity(repo_metadata),
         }
 
+        # Determine weights (dynamic or static)
+        weights = self.config["scoring_weights"]  # Default weights
+        repo_type = None
+        type_confidence = None
+
+        if self.enable_dynamic_weights and self.classifier and repo_path:
+            try:
+                classification = self.classifier.classify_repository(repo_path, repo_metadata)
+                repo_type = classification["type"]
+                type_confidence = classification["confidence"]
+
+                # Get dynamic weights based on classification
+                if repo_type != RepositoryType.UNKNOWN:
+                    weights = self.classifier.get_adjusted_weights(repo_type, type_confidence)
+                    print(
+                        f"📊 Dynamic weights applied for {repo_type.value} (confidence: {type_confidence:.2f})"
+                    )
+
+            except Exception as e:
+                print(f"⚠️ Repository classification failed, using default weights: {e}")
+
         # Calculate weighted overall score
-        weights = self.config["scoring_weights"]
         overall = sum(scores[category] * weights[category] for category in scores)
         scores["overall"] = int(overall)
 
-        return HealthScores(**scores)
+        return HealthScores(
+            **scores,
+            repository_type=repo_type.value if repo_type else None,
+            type_confidence=type_confidence,
+            weights_used=weights,
+        )
 
     def _score_documentation(self, metadata: Dict[str, Any]) -> int:
         """Score documentation health (25% of overall score)."""
@@ -273,28 +317,74 @@ class QualityScorer:
     def _score_community_health(self, metadata: Dict[str, Any]) -> int:
         """Score community health (15% of overall score)."""
         community_data = metadata.get("community", {})
+        git_data = metadata.get("git_info", {})
         score = 0
 
-        # Contributing Guidelines (30%)
-        if community_data.get("contributing_guidelines", False):
-            score += 30
+        # Git-based Community Metrics (60% of community score)
+        contributors = git_data.get("contributors", 0)
+        if contributors >= 50:
+            score += 30  # Excellent contributor diversity
+        elif contributors >= 20:
+            score += 25  # Good contributor diversity
+        elif contributors >= 10:
+            score += 20  # Moderate contributor diversity
+        elif contributors >= 5:
+            score += 15  # Some contributor diversity
+        elif contributors >= 2:
+            score += 10  # Limited contributor diversity
+        elif contributors >= 1:
+            score += 5  # Single author project
 
-        # Code of Conduct (25%)
-        if community_data.get("code_of_conduct", False):
-            score += 25
+        # Repository activity and maturity (30% of git metrics)
+        commit_count = git_data.get("commit_count", 0)
+        repo_age_days = git_data.get("repo_age_days", 0)
 
-        # Issue and PR Templates (25%)
-        if community_data.get("issue_templates", False):
+        # Activity score based on commits and age
+        if commit_count > 0 and repo_age_days > 0:
+            commits_per_month = (
+                (commit_count / (repo_age_days / 30.0)) if repo_age_days > 30 else commit_count
+            )
+            if commits_per_month >= 20:
+                score += 15  # Very active
+            elif commits_per_month >= 10:
+                score += 12  # Active
+            elif commits_per_month >= 5:
+                score += 10  # Moderate activity
+            elif commits_per_month >= 1:
+                score += 8  # Some activity
+            else:
+                score += 5  # Low activity
+
+        # Repository maturity bonus
+        if repo_age_days >= 365 * 2:  # 2+ years
             score += 15
-        if community_data.get("pr_templates", False):
+        elif repo_age_days >= 365:  # 1+ year
+            score += 10
+        elif repo_age_days >= 180:  # 6+ months
+            score += 5
+
+        # Formal Community Files (40% of community score)
+
+        # Contributing Guidelines (10%)
+        if community_data.get("contributing_guidelines", False):
             score += 10
 
-        # GitHub Features (20%)
+        # Code of Conduct (8%)
+        if community_data.get("code_of_conduct", False):
+            score += 8
+
+        # Issue and PR Templates (12%)
+        if community_data.get("issue_templates", False):
+            score += 6
+        if community_data.get("pr_templates", False):
+            score += 6
+
+        # GitHub Features (10%)
         github_features = len(community_data.get("github_features", []))
         if github_features >= 3:
-            score += 20
-        elif github_features >= 1:
             score += 10
+        elif github_features >= 1:
+            score += 5
 
         return min(int(score), 100)
 
@@ -368,27 +458,60 @@ class QualityScorer:
         """
         findings = HealthFindings(critical=[], high=[], medium=[], low=[])
 
-        # Critical findings (show-stoppers)
-        if scores.security < 50:
-            findings.critical.append("Security score critically low - immediate attention required")
+        # Determine repository type for context-aware thresholds
+        repo_type = scores.repository_type
+        is_research = repo_type == "research"
+        is_low_security = repo_type in ["research", "low_security"]
+
+        # Critical findings (adjusted for repository type)
+        # Security thresholds are lower for research projects
+        security_critical_threshold = 30 if is_research else 50
+        if scores.security < security_critical_threshold:
+            if is_research:
+                findings.critical.append(
+                    "Security practices need attention for research reproducibility"
+                )
+            else:
+                findings.critical.append(
+                    "Security score critically low - immediate attention required"
+                )
 
         if not metadata.get("documentation", {}).get("readme_exists", False):
             findings.critical.append("Missing README file")
 
-        # High priority findings
-        if scores.security < 70:
+        # High priority findings (adjusted for repository type)
+        security_high_threshold = 50 if is_research else 70
+        if scores.security < security_high_threshold:
             if not metadata.get("security", {}).get("security_policy_exists", False):
-                findings.high.append("Missing SECURITY.md file")
+                # Only flag security policy for non-research or high-profile research projects
+                if not is_research:
+                    findings.high.append("Missing SECURITY.md file")
+                elif scores.community > 70:  # High-profile research project
+                    findings.medium.append("Consider adding SECURITY.md for community transparency")
 
             secrets = metadata.get("security", {}).get("secrets_found", [])
             if secrets:
                 findings.high.append(f"Found {len(secrets)} potential secrets in code")
 
-        if scores.testing < 40:
-            findings.high.append("Test coverage appears low - consider adding more tests")
+        # Testing thresholds adjusted for project type
+        testing_threshold = 30 if is_research else 40
+        if scores.testing < testing_threshold:
+            if is_research:
+                findings.high.append("Test coverage low - important for research reproducibility")
+            else:
+                findings.high.append("Test coverage appears low - consider adding more tests")
 
+        # Contributing guidelines less critical for small research projects
         if not metadata.get("community", {}).get("contributing_guidelines", False):
-            findings.high.append("Missing CONTRIBUTING.md guidelines")
+            git_data = metadata.get("git_info", {})
+            contributors = git_data.get("contributors", 0)
+
+            if is_research and contributors < 5:
+                findings.medium.append(
+                    "Consider CONTRIBUTING.md if expecting external contributions"
+                )
+            else:
+                findings.high.append("Missing CONTRIBUTING.md guidelines")
 
         # Medium priority findings
         if scores.documentation < 70:
@@ -440,51 +563,82 @@ class QualityScorer:
         """
         recommendations = []
 
-        # Security recommendations
+        # Determine if this is a research/academic project
+        repo_type = scores.repository_type
+        is_research = repo_type == "research"
+        is_low_security = repo_type in ["research", "low_security"]
+
+        # Security recommendations (adjusted based on repository type)
         if scores.security < 80:
-            if not metadata.get("security", {}).get("security_policy_exists", False):
+            # Only recommend security policy for non-research projects or high-profile research projects
+            if not metadata.get("security", {}).get("security_policy_exists", False) and (
+                not is_research or (is_research and scores.community > 70)
+            ):
+                # Only suggest security policy for research projects with active communities
+                priority = "medium" if is_research else "high"
                 recommendations.append(
                     {
                         "category": "security",
-                        "priority": "high",
+                        "priority": priority,
                         "title": "Add Security Policy",
-                        "description": "Create SECURITY.md with vulnerability reporting process",
+                        "description": "Create SECURITY.md with vulnerability reporting process"
+                        if not is_research
+                        else "Consider adding SECURITY.md for community transparency",
                         "template_available": True,
                     }
                 )
 
+            # Dependency lock files are always important for reproducibility
             if not metadata.get("security", {}).get("dependency_lock_files"):
+                # For research projects, emphasize reproducibility over security
+                description = (
+                    "Use lock files to ensure reproducible research environments"
+                    if is_research
+                    else "Use lock files to ensure reproducible builds and security"
+                )
                 recommendations.append(
                     {
                         "category": "security",
                         "priority": "medium",
                         "title": "Add Dependency Lock Files",
-                        "description": "Use lock files to ensure reproducible builds and security",
+                        "description": description,
                         "template_available": False,
                     }
                 )
 
-        # Documentation recommendations
+        # Documentation recommendations (enhanced for research projects)
         if scores.documentation < 80:
             readme_score = metadata.get("documentation", {}).get("readme_quality_score", 0)
             if readme_score < 70:
+                if is_research:
+                    description = "Add missing sections: installation, usage examples, citation info, and reproducibility instructions"
+                else:
+                    description = (
+                        "Add missing sections: installation, usage, contributing guidelines"
+                    )
+
                 recommendations.append(
                     {
                         "category": "documentation",
                         "priority": "high",
                         "title": "Improve README Quality",
-                        "description": "Add missing sections: installation, usage, contributing guidelines",
+                        "description": description,
                         "template_available": True,
                     }
                 )
 
             if not metadata.get("documentation", {}).get("api_docs_exists", False):
+                if is_research:
+                    description = "Create comprehensive documentation with usage examples and mathematical background"
+                else:
+                    description = "Create comprehensive API documentation for better usability"
+
                 recommendations.append(
                     {
                         "category": "documentation",
                         "priority": "medium",
                         "title": "Add API Documentation",
-                        "description": "Create comprehensive API documentation for better usability",
+                        "description": description,
                         "template_available": True,
                     }
                 )
@@ -513,29 +667,49 @@ class QualityScorer:
                     }
                 )
 
-        # Community recommendations
+        # Community recommendations (tailored by project type)
         if scores.community < 70:
+            # Only suggest contributing guidelines for active projects or those lacking them
             if not metadata.get("community", {}).get("contributing_guidelines", False):
+                # For research projects with low activity, this is lower priority
+                git_data = metadata.get("git_info", {})
+                contributors = git_data.get("contributors", 0)
+
+                if is_research and contributors < 5:
+                    priority = "low"
+                    description = (
+                        "Consider adding CONTRIBUTING.md if you expect external contributions"
+                    )
+                else:
+                    priority = "medium"
+                    description = "Create CONTRIBUTING.md to help new contributors"
+
                 recommendations.append(
                     {
                         "category": "community",
-                        "priority": "medium",
+                        "priority": priority,
                         "title": "Add Contributing Guidelines",
-                        "description": "Create CONTRIBUTING.md to help new contributors",
+                        "description": description,
                         "template_available": True,
                     }
                 )
 
+            # Code of conduct is less critical for small research projects
             if not metadata.get("community", {}).get("code_of_conduct", False):
-                recommendations.append(
-                    {
-                        "category": "community",
-                        "priority": "low",
-                        "title": "Add Code of Conduct",
-                        "description": "Establish community standards with CODE_OF_CONDUCT.md",
-                        "template_available": True,
-                    }
-                )
+                # Only suggest for larger communities or non-research projects
+                git_data = metadata.get("git_info", {})
+                contributors = git_data.get("contributors", 0)
+
+                if not is_research or contributors >= 10:
+                    recommendations.append(
+                        {
+                            "category": "community",
+                            "priority": "low",
+                            "title": "Add Code of Conduct",
+                            "description": "Establish community standards with CODE_OF_CONDUCT.md",
+                            "template_available": True,
+                        }
+                    )
 
         # CI/CD recommendations
         if scores.ci_cd < 60 and not metadata.get("ci_cd", {}).get("has_automated_testing", False):

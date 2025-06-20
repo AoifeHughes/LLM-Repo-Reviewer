@@ -11,7 +11,7 @@ import re
 from collections import Counter
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 import git
 
@@ -31,14 +31,42 @@ class RepoIndexer:
 
     def __init__(self):
         self.supported_config_files = {
-            "python": ["requirements.txt", "setup.py", "pyproject.toml", "setup.cfg", "Pipfile"],
-            "javascript": ["package.json", "yarn.lock", "package-lock.json"],
+            "python": [
+                "requirements.txt",
+                "setup.py",
+                "pyproject.toml",
+                "setup.cfg",
+                "Pipfile",
+                "Pipfile.lock",
+                "poetry.lock",
+                "conda.yaml",
+                "environment.yml",
+            ],
+            "javascript": [
+                "package.json",
+                "yarn.lock",
+                "package-lock.json",
+                "pnpm-lock.yaml",
+                "bun.lockb",
+            ],
+            "typescript": ["tsconfig.json", "package.json"],
             "rust": ["Cargo.toml", "Cargo.lock"],
-            "java": ["pom.xml", "build.gradle", "build.gradle.kts"],
+            "julia": ["Project.toml", "JuliaProject.toml", "Manifest.toml"],
+            "java": ["pom.xml", "build.gradle", "build.gradle.kts", "gradle.properties"],
             "go": ["go.mod", "go.sum"],
             "php": ["composer.json", "composer.lock"],
-            "ruby": ["Gemfile", "Gemfile.lock"],
-            "csharp": ["*.csproj", "*.sln", "packages.config"],
+            "ruby": ["Gemfile", "Gemfile.lock", "*.gemspec"],
+            "csharp": ["*.csproj", "*.sln", "packages.config", "Directory.Build.props"],
+            "swift": ["Package.swift", "*.xcodeproj", "*.xcworkspace"],
+            "dart": ["pubspec.yaml", "pubspec.lock"],
+            "elixir": ["mix.exs", "mix.lock"],
+            "haskell": ["*.cabal", "stack.yaml", "cabal.project"],
+            "ocaml": ["dune-project", "*.opam"],
+            "r": ["DESCRIPTION", "NAMESPACE", "*.Rproj"],
+            "matlab": ["*.prj", "*.mlapp", "*.mlx"],
+            "clojure": ["project.clj", "deps.edn", "build.boot"],
+            "scala": ["build.sbt", "*.sbt"],
+            "kotlin": ["build.gradle.kts", "pom.xml"],
         }
 
         self.documentation_files = [
@@ -56,7 +84,15 @@ class RepoIndexer:
             "CODE_OF_CONDUCT.md",
             "SECURITY.md",
             "LICENSE",
+            "LICENSE.md",
+            "LICENSE.txt",
             "COPYING",
+            "COPYING.md",
+            "COPYING.txt",
+            "MIT-LICENSE",
+            "MIT-LICENSE.txt",
+            "APACHE-LICENSE",
+            "APACHE-LICENSE.txt",
             "INSTALL.md",
             "INSTALL.rst",
             "INSTALL.txt",
@@ -171,29 +207,92 @@ class RepoIndexer:
     def _detect_languages(self, repo_path: Path) -> Dict[str, Any]:
         """Detect programming languages and their distribution."""
         language_map = {
+            # Python
             ".py": "Python",
+            ".pyx": "Python",
+            ".pyi": "Python",
+            # JavaScript/TypeScript
             ".js": "JavaScript",
             ".jsx": "JavaScript",
+            ".mjs": "JavaScript",
             ".ts": "TypeScript",
             ".tsx": "TypeScript",
+            # Java/JVM
             ".java": "Java",
-            ".cpp": "C++",
-            ".cc": "C++",
-            ".cxx": "C++",
+            ".kt": "Kotlin",
+            ".kts": "Kotlin",
+            ".scala": "Scala",
+            ".clj": "Clojure",
+            ".cljs": "ClojureScript",
+            # C/C++
             ".c": "C",
+            ".cpp": "C++",
+            ".cxx": "C++",
+            ".cc": "C++",
+            ".c++": "C++",
             ".h": "C/C++",
+            ".hpp": "C++",
+            ".hxx": "C++",
+            ".hh": "C++",
+            # Systems Programming
             ".rs": "Rust",
             ".go": "Go",
-            ".rb": "Ruby",
+            ".zig": "Zig",
+            ".nim": "Nim",
+            ".v": "V",
+            # Web/Mobile
             ".php": "PHP",
+            ".rb": "Ruby",
             ".cs": "C#",
+            ".fs": "F#",
+            ".vb": "Visual Basic",
             ".swift": "Swift",
-            ".kt": "Kotlin",
-            ".scala": "Scala",
+            ".dart": "Dart",
+            # Functional
+            ".hs": "Haskell",
+            ".lhs": "Haskell",
+            ".ml": "OCaml",
+            ".mli": "OCaml",
+            ".elm": "Elm",
+            ".ex": "Elixir",
+            ".exs": "Elixir",
+            # Scientific/Numeric
+            ".jl": "Julia",
+            ".r": "R",
+            ".R": "R",
+            ".m": "MATLAB",
+            ".f90": "Fortran",
+            ".f95": "Fortran",
+            ".f03": "Fortran",
+            ".f08": "Fortran",
+            ".for": "Fortran",
+            ".f": "Fortran",
+            # Shell/Scripting
             ".sh": "Shell",
             ".bash": "Shell",
-            ".r": "R",
+            ".zsh": "Shell",
+            ".fish": "Shell",
+            ".ps1": "PowerShell",
+            ".bat": "Batch",
+            ".cmd": "Batch",
+            ".pl": "Perl",
+            ".pm": "Perl",
+            ".lua": "Lua",
+            # Hardware Description
+            ".vhd": "VHDL",
+            ".vhdl": "VHDL",
+            ".sv": "SystemVerilog",
+            # Data/Config
             ".sql": "SQL",
+            ".json": "JSON",
+            ".yaml": "YAML",
+            ".yml": "YAML",
+            ".toml": "TOML",
+            ".xml": "XML",
+            # Documentation
+            ".md": "Markdown",
+            ".rst": "reStructuredText",
+            ".tex": "LaTeX",
         }
 
         language_files = Counter()
@@ -237,9 +336,9 @@ class RepoIndexer:
                 else 0,
             }
 
-        # Determine primary language
-        primary_language = (
-            max(language_lines, key=language_lines.get) if language_lines else "Unknown"
+        # Determine primary language with fallback detection
+        primary_language = self._determine_primary_language(
+            repo_path, language_lines, language_files
         )
 
         return {
@@ -248,6 +347,107 @@ class RepoIndexer:
             "total_files": total_files,
             "total_lines": total_lines,
         }
+
+    def _determine_primary_language(
+        self, repo_path: Path, language_lines: Counter, language_files: Counter
+    ) -> str:
+        """Determine primary language using multiple detection strategies."""
+
+        # Strategy 1: Use line count if we have significant code
+        if language_lines and sum(language_lines.values()) > 100:
+            return max(language_lines, key=language_lines.get)
+
+        # Strategy 2: Check for language-specific project files
+        language_indicators = {
+            "Julia": ["Project.toml", "JuliaProject.toml", "Manifest.toml"],
+            "Python": ["setup.py", "pyproject.toml", "requirements.txt", "Pipfile"],
+            "JavaScript": ["package.json", "yarn.lock", "package-lock.json"],
+            "TypeScript": ["tsconfig.json", "package.json"],
+            "Rust": ["Cargo.toml", "Cargo.lock"],
+            "Go": ["go.mod", "go.sum"],
+            "Java": ["pom.xml", "build.gradle", "build.gradle.kts"],
+            "C#": ["*.csproj", "*.sln", "Directory.Build.props"],
+            "Ruby": ["Gemfile", "Gemfile.lock", "*.gemspec"],
+            "PHP": ["composer.json", "composer.lock"],
+            "Swift": ["Package.swift", "*.xcodeproj", "*.xcworkspace"],
+            "Dart": ["pubspec.yaml", "pubspec.lock"],
+            "Elixir": ["mix.exs", "mix.lock"],
+            "Haskell": ["*.cabal", "stack.yaml", "cabal.project"],
+            "OCaml": ["dune-project", "*.opam", "_build"],
+            "R": ["DESCRIPTION", "NAMESPACE", "*.Rproj"],
+            "MATLAB": ["*.prj", "*.mlapp", "*.mlx"],
+        }
+
+        for language, indicators in language_indicators.items():
+            for indicator in indicators:
+                if "*" in indicator:
+                    # Handle wildcard patterns
+                    pattern = indicator.replace("*", "")
+                    for item in repo_path.iterdir():
+                        if item.name.endswith(pattern):
+                            return language
+                else:
+                    # Handle exact file matches
+                    if (repo_path / indicator).exists():
+                        return language
+
+        # Strategy 3: Check shebang lines for scripts
+        shebang_language = self._detect_shebang_language(repo_path)
+        if shebang_language:
+            return shebang_language
+
+        # Strategy 4: Use file count if we have multiple files
+        if language_files:
+            return max(language_files, key=language_files.get)
+
+        # Strategy 5: Final fallback
+        return "Unknown"
+
+    def _detect_shebang_language(self, repo_path: Path) -> Optional[str]:
+        """Detect primary language from shebang lines in executable files."""
+        shebang_map = {
+            "python": "Python",
+            "python3": "Python",
+            "node": "JavaScript",
+            "bash": "Shell",
+            "sh": "Shell",
+            "zsh": "Shell",
+            "fish": "Shell",
+            "ruby": "Ruby",
+            "perl": "Perl",
+            "php": "PHP",
+            "julia": "Julia",
+        }
+
+        script_files = []
+        for root, dirs, files in os.walk(repo_path):
+            dirs[:] = [d for d in dirs if not d.startswith(".")]
+            for file in files:
+                file_path = Path(root) / file
+                # Check files without extensions that might be scripts
+                if (not file_path.suffix and file_path.is_file()) or file_path.suffix in [
+                    ".sh",
+                    ".py",
+                    ".rb",
+                    ".pl",
+                    ".js",
+                ]:
+                    script_files.append(file_path)
+
+        shebang_languages = Counter()
+        for script_file in script_files[:20]:  # Limit to avoid too much I/O
+            try:
+                with open(script_file, encoding="utf-8", errors="ignore") as f:
+                    first_line = f.readline().strip()
+                    if first_line.startswith("#!"):
+                        for interpreter, language in shebang_map.items():
+                            if interpreter in first_line:
+                                shebang_languages[language] += 1
+                                break
+            except Exception:
+                continue
+
+        return shebang_languages.most_common(1)[0][0] if shebang_languages else None
 
     def _analyze_dependencies(self, repo_path: Path) -> Dict[str, Any]:
         """Analyze project dependencies and configuration files."""
@@ -640,6 +840,7 @@ class RepoIndexer:
             "contributors": 0,
             "last_commit": None,
             "repo_age_days": 0,
+            "creation_date": None,
         }
 
         try:
@@ -649,26 +850,42 @@ class RepoIndexer:
             # Count branches
             git_info["branch_count"] = len(list(repo.branches))
 
-            # Count commits
-            git_info["commit_count"] = len(list(repo.iter_commits()))
+            # Count commits (limit for performance on large repos)
+            commits = list(repo.iter_commits(max_count=10000))
+            git_info["commit_count"] = len(commits)
 
             # Get last commit
-            last_commit = next(repo.iter_commits())
-            git_info["last_commit"] = last_commit.committed_datetime.isoformat()
+            if commits:
+                last_commit = commits[0]  # Most recent commit
+                git_info["last_commit"] = last_commit.committed_datetime.isoformat()
 
-            # Calculate repo age
-            first_commit = next(repo.iter_commits(max_count=1, reverse=True))
-            age = datetime.now() - first_commit.committed_datetime.replace(tzinfo=None)
-            git_info["repo_age_days"] = age.days
+                # Calculate repo age using the oldest commit
+                # Use reverse iteration to get the first commit efficiently
+                try:
+                    first_commit = next(repo.iter_commits(max_count=1, reverse=True))
+                    creation_date = first_commit.committed_datetime.replace(tzinfo=None)
+                    git_info["creation_date"] = creation_date.isoformat()
 
-            # Count unique contributors
+                    # Calculate age in days
+                    age = datetime.now() - creation_date
+                    git_info["repo_age_days"] = max(age.days, 0)  # Ensure non-negative
+
+                except Exception as e:
+                    # Fallback: use last commit if we can't get first commit
+                    print(f"Warning: Could not determine repository creation date: {e}")
+                    fallback_date = last_commit.committed_datetime.replace(tzinfo=None)
+                    age = datetime.now() - fallback_date
+                    git_info["repo_age_days"] = max(age.days, 0)
+
+            # Count unique contributors (limit for performance)
             contributors = set()
-            for commit in repo.iter_commits():
-                contributors.add(commit.author.email)
+            for commit in repo.iter_commits(max_count=5000):  # Limit to avoid performance issues
+                if commit.author and commit.author.email:
+                    contributors.add(commit.author.email)
             git_info["contributors"] = len(contributors)
 
-        except Exception:
-            pass
+        except Exception as e:
+            print(f"Warning: Error extracting git info: {e}")
 
         return git_info
 

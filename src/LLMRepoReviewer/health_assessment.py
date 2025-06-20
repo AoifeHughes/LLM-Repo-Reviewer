@@ -181,13 +181,16 @@ class HealthAssessment:
         security_summary = self._format_security_summary(repo_metadata.get("security", {}))
 
         # Format CI/CD status
-        cicd_status = self._format_cicd_status(repo_metadata.get("ci_cd", {}))
+        cicd_status = self._format_cicd_status(repo_metadata.get("ci_cd", {}), health_scores.ci_cd)
 
         # Format community health indicators
         community_health = self._format_community_health(repo_metadata.get("community", {}))
 
         # LLM Analysis sections
         llm_analysis = context.get("llm_analysis", {})
+
+        # Format repository classification info
+        classification_info = self._format_repository_classification(health_scores)
 
         return {
             "repo_name": context["repo_name"],
@@ -196,6 +199,7 @@ class HealthAssessment:
             "overall_score": health_scores.overall,
             "overall_grade": overall_grade,
             "health_emoji": self._get_health_emoji(health_scores.overall),
+            "classification_info": classification_info,
             "scores_table": scores_table,
             "repo_stats": repo_stats,
             "language_info": language_info,
@@ -355,7 +359,9 @@ class HealthAssessment:
         primary = languages_data.get("primary_language", "Unknown")
 
         if not languages:
-            return f"**Primary Language**: {primary}\n\nNo detailed language analysis available."
+            if primary == "Unknown":
+                return f"**Primary Language**: {primary}\n\nNo supported programming languages detected. This may be a documentation-only repository, or it may use languages not yet supported by our analyzer."
+            return f"**Primary Language**: {primary}\n\nLanguage detected through project files, but no source code files found for detailed analysis."
 
         result = f"**Primary Language**: {primary}\n\n"
         result += "| Language | Files | Lines | Percentage |\n"
@@ -392,14 +398,14 @@ class HealthAssessment:
 
         return result
 
-    def _format_cicd_status(self, cicd_data: Dict[str, Any]) -> str:
+    def _format_cicd_status(self, cicd_data: Dict[str, Any], cicd_score: int) -> str:
         """Format CI/CD status summary."""
         github_actions = len(cicd_data.get("github_actions", []))
         other_ci = len(cicd_data.get("other_ci", []))
         has_testing = cicd_data.get("has_automated_testing", False)
         has_deployment = cicd_data.get("has_automated_deployment", False)
 
-        result = f"**CI/CD Maturity Score**: {cicd_data.get('workflow_quality_score', 0)}/100\n\n"
+        result = f"**CI/CD Maturity Score**: {cicd_score}/100\n\n"
         result += f"- **GitHub Actions**: {github_actions} workflows\n"
         result += f"- **Other CI Systems**: {other_ci} configurations\n"
         result += f"- **Automated Testing**: {'✅' if has_testing else '❌'}\n"
@@ -433,6 +439,51 @@ class HealthAssessment:
 
         return result
 
+    def _format_repository_classification(self, health_scores: HealthScores) -> str:
+        """Format repository type classification information."""
+        repo_type = health_scores.repository_type
+        confidence = health_scores.type_confidence
+        weights_used = health_scores.weights_used
+
+        if not repo_type:
+            return ""
+
+        result = f"**Repository Type**: {repo_type.replace('_', ' ').title()}"
+
+        if confidence:
+            confidence_pct = confidence * 100
+            result += f" (Confidence: {confidence_pct:.0f}%)"
+
+        result += "\n\n"
+
+        # Add type-specific explanation
+        type_descriptions = {
+            "high_security": "Web applications, APIs, and systems handling sensitive data",
+            "medium_security": "Libraries, CLI tools, and desktop applications",
+            "low_security": "Documentation sites, tutorials, and educational content",
+            "research": "Academic projects, scientific computing, and research tools",
+        }
+
+        if repo_type in type_descriptions:
+            result += f"*{type_descriptions[repo_type]}*\n\n"
+
+        # Show dynamic weight adjustments if applied
+        if weights_used:
+            result += "**Assessment Weights** (adjusted for repository type):\n"
+            for category, weight in weights_used.items():
+                if category != "security":  # Security is shown with special formatting
+                    result += f"- {category.replace('_', ' ').title()}: {weight*100:.0f}%\n"
+                else:
+                    # Highlight security weight adjustment
+                    if weight < 0.15:
+                        result += f"- Security: {weight*100:.0f}% ⬇️ (reduced for {repo_type.replace('_', ' ')} project)\n"
+                    elif weight > 0.22:
+                        result += f"- Security: {weight*100:.0f}% ⬆️ (increased for high-security project)\n"
+                    else:
+                        result += f"- Security: {weight*100:.0f}%\n"
+
+        return result
+
     def _format_comparison_insights(self, comparison_data: Dict[str, Any]) -> str:
         """Format repository comparison insights."""
         if not comparison_data:
@@ -454,6 +505,8 @@ class HealthAssessment:
 ## 📊 Executive Summary
 
 This repository has achieved an overall health score of **{overall_score}/100** ({overall_grade}), indicating {overall_grade} health status. The assessment evaluates six key categories of repository quality and provides actionable recommendations for improvement.
+
+{classification_info}
 
 ### Health Scores by Category
 
