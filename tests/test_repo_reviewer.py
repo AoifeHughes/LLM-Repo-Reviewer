@@ -12,7 +12,7 @@ import pytest
 from LLMRepoReviewer.repo_reviewer import RepoReviewer
 
 
-@pytest.fixture()
+@pytest.fixture
 def temp_directory():
     """Create a temporary directory with test files"""
     with tempfile.TemporaryDirectory() as tmpdir:
@@ -33,7 +33,7 @@ def temp_directory():
         yield tmpdir
 
 
-@pytest.fixture()
+@pytest.fixture
 def mock_openai_client():
     """Mock OpenAI client"""
     mock_client = Mock()
@@ -43,7 +43,7 @@ def mock_openai_client():
     return mock_client
 
 
-@pytest.fixture()
+@pytest.fixture
 def mock_chromadb():
     """Mock ChromaDB client"""
     with patch("chromadb.Client") as mock:
@@ -69,7 +69,7 @@ def mock_chromadb():
         yield mock_client
 
 
-@pytest.fixture()
+@pytest.fixture
 def mock_embeddings():
     """Mock HuggingFace embeddings"""
     with patch("LLMRepoReviewer.repo_reviewer.HuggingFaceEmbeddings") as mock:
