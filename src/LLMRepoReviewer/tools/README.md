@@ -37,6 +37,7 @@ To create a custom tool, inherit from `BaseTool` and implement the required meth
 from src.LLMRepoReviewer.tools.base import BaseTool
 from typing import Dict, Any
 
+
 class MyCustomTool(BaseTool):
     @property
     def name(self) -> str:
