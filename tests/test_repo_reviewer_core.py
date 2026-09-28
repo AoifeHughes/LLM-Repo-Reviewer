@@ -17,7 +17,7 @@ from LLMRepoReviewer.tools.base import BaseTool
 class TestRepoReviewerCore:
     """Test RepoReviewer core functionality without LLM dependencies"""
 
-    @pytest.fixture()
+    @pytest.fixture
     def mock_dependencies(self):
         """Mock all external dependencies"""
         with patch("LLMRepoReviewer.repo_reviewer.chromadb.Client") as mock_chromadb, patch(
@@ -52,7 +52,7 @@ class TestRepoReviewerCore:
                 "collection": mock_collection,
             }
 
-    @pytest.fixture()
+    @pytest.fixture
     def temp_directory(self):
         """Create a temporary directory with test files"""
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -372,7 +372,7 @@ class TestRepoReviewerCore:
 class TestRepoReviewerErrorHandling:
     """Test error handling in RepoReviewer"""
 
-    @pytest.fixture()
+    @pytest.fixture
     def mock_dependencies(self):
         """Mock dependencies for error testing"""
         with patch("LLMRepoReviewer.repo_reviewer.chromadb.Client") as mock_chromadb, patch(
