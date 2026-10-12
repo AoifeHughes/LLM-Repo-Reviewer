@@ -32,12 +32,12 @@ pytestmark = pytest.mark.skipif(
 class TestWithRealLLM:
     """Tests that require a real LLM connection"""
 
-    @pytest.fixture()
+    @pytest.fixture
     def reviewer(self):
         """Create a RepoReviewer instance for real LLM testing"""
         return RepoReviewer(api_base_url="http://localhost:11434/v1", api_key="fake-key-for-local")
 
-    @pytest.fixture()
+    @pytest.fixture
     def test_project(self):
         """Create a test project for analysis"""
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -235,11 +235,11 @@ if __name__ == "__main__":
 class TestLLMPerformance:
     """Performance and stress tests with real LLM"""
 
-    @pytest.fixture()
+    @pytest.fixture
     def reviewer(self):
         return RepoReviewer(api_base_url="http://localhost:11434/v1")
 
-    @pytest.mark.slow()
+    @pytest.mark.slow
     def test_large_project_analysis(self, reviewer):
         """Test analysis of a larger project structure"""
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -277,7 +277,7 @@ class Class_{j}:
             assert isinstance(response, str)
             assert len(response) > 10
 
-    @pytest.mark.slow()
+    @pytest.mark.slow
     def test_multiple_tool_calls(self, reviewer):
         """Test multiple sequential tool calls"""
         with tempfile.TemporaryDirectory() as tmpdir:
