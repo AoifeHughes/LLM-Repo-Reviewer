@@ -26,9 +26,9 @@ def check_llm_available(api_base="http://localhost:11434/v1"):
 
 def run_command(cmd, description):
     """Run a command and print results"""
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print(f"🧪 {description}")
-    print(f"{'='*60}")
+    print(f"{'=' * 60}")
     print(f"Running: {' '.join(cmd)}")
 
     result = subprocess.run(cmd, capture_output=True, text=True)
@@ -140,7 +140,7 @@ def main():
         success &= run_command(base_cmd + ["tests/test_repo_reviewer.py"], "Legacy Tests")
 
     # Summary
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     if success:
         print("🎉 All tests completed successfully!")
         if args.coverage:

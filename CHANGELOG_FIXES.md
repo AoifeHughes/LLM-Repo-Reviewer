@@ -34,7 +34,7 @@ from langchain_huggingface import HuggingFaceEmbeddings
 assert reviewer.client.base_url == "http://localhost:11434/v1"
 
 # After
-assert str(reviewer.client.base_url).rstrip('/') == "http://localhost:11434/v1"
+assert str(reviewer.client.base_url).rstrip("/") == "http://localhost:11434/v1"
 ```
 
 **Reason**: OpenAI client automatically adds trailing slash to base URLs, so we need to strip it for comparison.
