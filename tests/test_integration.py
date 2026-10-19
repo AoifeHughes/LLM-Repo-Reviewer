@@ -14,7 +14,7 @@ from LLMRepoReviewer.repo_reviewer import RepoReviewer
 class TestRepoReviewerIntegration:
     """Integration tests with mocked LLM responses"""
 
-    @pytest.fixture()
+    @pytest.fixture
     def mock_full_system(self):
         """Mock all external dependencies for integration testing"""
         with patch("LLMRepoReviewer.repo_reviewer.chromadb.Client") as mock_chromadb, patch(
@@ -78,7 +78,7 @@ class TestRepoReviewerIntegration:
                 "collection": mock_collection,
             }
 
-    @pytest.fixture()
+    @pytest.fixture
     def sample_project(self):
         """Create a sample project structure"""
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -308,7 +308,7 @@ class TestRepoReviewerIntegration:
 class TestCommandLineIntegration:
     """Test command-line interface integration"""
 
-    @pytest.fixture()
+    @pytest.fixture
     def mock_system(self):
         """Mock system for CLI testing"""
         with patch("LLMRepoReviewer.repo_reviewer.chromadb.Client"), patch(
